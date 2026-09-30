@@ -1,0 +1,32 @@
+{
+  "name": "tin-treasure-hunt",
+  "version": "1.0.0",
+  "description": "TIN Treasure Hunt: Explore. Discover. Reward.",
+  "scripts": {
+    "dev": "wrangler dev --local --test-scheduled",
+    "db:migrate:local": "wrangler d1 migrations apply tin-treasure-hunt --local",
+    "db:seed:local": "wrangler d1 execute tin-treasure-hunt --local --file seed/demo-cozumel.sql",
+    "db:migrate": "wrangler d1 migrations apply tin-treasure-hunt --remote",
+    "deploy": "wrangler deploy",
+    "test:e2e": "node test/e2e.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cjcilliers-web/tin-treasure-hunt.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/cjcilliers-web/tin-treasure-hunt/issues"
+  },
+  "homepage": "https://github.com/cjcilliers-web/tin-treasure-hunt#readme",
+  "devDependencies": {
+    "wrangler": "^4.145.0"
+  },
+  "dependencies": {
+    "jsqr": "^1.4.0",
+    "qrcode-generator": "^2.0.4"
+  },
+  "private": true
+}

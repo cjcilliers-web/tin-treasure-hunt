@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#07100f">
+<title>TIN Treasure Hunt</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Marcellus&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="/app.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏴‍☠️</text></svg>">
+</head>
+<body>
+<div class="stage app">
+  <div class="viewsw" id="viewsw" hidden>
+    <div class="modes" role="group" aria-label="View">
+      <button data-mode="traveler" aria-pressed="true">Explorer</button>
+      <button data-mode="merchant" aria-pressed="false" hidden>Merchant</button>
+      <button data-mode="hq" aria-pressed="false" hidden>TIN HQ</button>
+    </div>
+  </div>
+  <div class="phone" id="phone" hidden>
+    <header class="top">
+      <div class="brandrow">
+        <div class="brand"><span class="mk">TIN</span><span>Treasure <b>Hunt</b></span></div>
+        <button class="credits" id="credBtn" aria-label="Your Treasure Hunt Credits">🪙 …</button>
+      </div>
+      <div class="loc"><span class="dot"></span><span id="locTxt">Finding you…</span></div>
+    </header>
+    <main class="screen" id="screen"><div class="spin"></div></main>
+    <nav class="nav" id="nav"></nav>
+  </div>
+  <section id="hq" hidden></section>
+</div>
+<script src="/vendor/qrcode.js"></script>
+<script src="/vendor/jsQR.js" defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js" defer></script>
+<script src="/app.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#07100f">
+<title>Treasure Hunt Cozumel · TIN</title>
+<meta name="description" content="Free treasures hidden by Cozumel businesses. Explore San Miguel, find them, earn credits.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Marcellus&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap">
+<link rel="stylesheet" href="/app.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏴‍☠️</text></svg>">
+</head>
+<body>
+<div class="stage">
+  <section class="about">
+    <span class="tag">Cozumel · Quintana Roo · México</span>
+    <h1>Treasure Hunt <em>Cozumel</em></h1>
+    <p style="font-family:var(--f-display);font-size:1.15rem;color:var(--gold-hi)">Explore. Discover. Reward.</p>
+    <p id="live">Treasures are hidden from the Malecón to the mangroves. Step off the main street: the best finds are where the cruise crowds don't go.</p>
+    <div class="today" id="counts" aria-label="Today's Treasures"></div>
+    <p class="note">Every verified find earns credits and a ticket in the Sunday 2pm UTC raffle. Merchants: ask TIN about hiding your own treasure.</p>
+    <p class="note"><a href="/" style="color:var(--muted)">← All TIN destinations</a></p>
+  </section>
+  <section class="auth" id="authbox" data-destination="cozumel" aria-live="polite"><div class="spin"></div></section>
+</div>
+<script src="/login.js"></script>
+<script>
+(async () => {
+  try {
+    const [d, l] = await Promise.all([fetch('/api/destinations/cozumel').then((r) => r.json()), fetch('/api/drops?destination=cozumel&radius=50000').then((r) => r.json())]);
+    const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    if (d.hunt) document.getElementById('live').innerHTML = `<b style="color:var(--gold-hi)">${esc(d.hunt.emoji)} ${esc(d.hunt.name)} is live!</b> ${esc(d.hunt.tagline || '')}`;
+    const E = { Food: '🍔', Drink: '🍺', Dessert: '🍦', Adventure: '🧭', Shopping: '🛍️', Mystery: '🎁' };
+    document.getElementById('counts').innerHTML = Object.entries(l.counts).map(([c, n]) => `<div class="tt" style="cursor:default"><b>${n}</b>${E[c]} ${c}</div>`).join('');
+  } catch {}
+})();
+</script>
+</body>
+</html>

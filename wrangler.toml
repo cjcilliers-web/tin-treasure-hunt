@@ -1,0 +1,29 @@
+name = "tin-treasure-hunt"
+main = "src/worker.js"
+compatibility_date = "2026-09-01"
+
+# Static front end (home, /cozumel, the app) lives in ./public
+[assets]
+directory = "./public"
+binding = "ASSETS"
+not_found_handling = "none"
+run_worker_first = ["/api/*", "/cozumel", "/cozumel/"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "tin-treasure-hunt"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"   # from: npx wrangler d1 create tin-treasure-hunt
+migrations_dir = "migrations"
+
+# Optional: lets Polly understand free-form questions with Workers AI.
+# Without it Polly still works using built-in rules.
+# [ai]
+# binding = "AI"
+
+[triggers]
+# Hourly: release expired claims. Sundays 14:00 UTC: weekly raffle.
+crons = ["0 * * * *", "0 14 * * SUN"]
+
+[vars]
+# Email that becomes TIN HQ admin when it registers (change before deploy).
+ADMIN_EMAILS = "cjcilliers@gmail.com"
