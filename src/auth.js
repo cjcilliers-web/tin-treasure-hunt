@@ -78,7 +78,7 @@ export async function register(req, env) {
   const password = typeof b.password === 'string' ? b.password : '';
   if (password.length < 8) bad('Password must be at least 8 characters');
   if (password.length > 200) bad('Password is too long');
-  const language = ['en', 'es'].includes(b.language) ? b.language : 'en';
+  const language = ['en', 'es', 'pt', 'fr', 'de'].includes(b.language) ? b.language : 'en';
   const destination = typeof b.destination === 'string' ? b.destination : null;
 
   const exists = await env.DB.prepare('SELECT 1 FROM tin_users WHERE email = ?').bind(email).first();

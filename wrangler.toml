@@ -24,6 +24,9 @@ migrations_dir = "migrations"
 # Hourly: release expired claims. Sundays 14:00 UTC: weekly raffle.
 crons = ["0 * * * *", "0 14 * * SUN"]
 
+# Secrets (set with `npx wrangler secret put NAME`, never in this file):
+#   STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET
+
 [vars]
 # Email that becomes TIN HQ admin when it registers (change before deploy).
 ADMIN_EMAILS = "cjcilliers@gmail.com"

@@ -25,7 +25,7 @@
         ${signup ? '<label>Your name<input name="name" required maxlength="80" autocomplete="name"></label>' : ''}
         <label>Email<input name="email" type="email" required autocomplete="email"></label>
         <label>Password<input name="password" type="password" required minlength="${signup ? 8 : 1}" autocomplete="${signup ? 'new-password' : 'current-password'}"></label>
-        ${signup ? '<label>Language<select name="language"><option value="en">English</option><option value="es">Español</option></select></label>' : ''}
+        ${signup ? '<label>Language<select name="language"><option value="en">English</option><option value="es">Español</option><option value="pt">Português</option><option value="fr">Français</option><option value="de">Deutsch</option></select></label>' : ''}
         <div class="err" id="le" role="alert"></div>
         <button class="btn" type="submit">${signup ? 'Create account' : 'Sign in'}</button>
       </form>

@@ -4,13 +4,14 @@ import {
   getSettings, CATEGORIES, DIFFICULTIES, nextRaffleAt, lastRaffleAt, iso,
 } from './lib.js';
 import { requireRole } from './auth.js';
+import { stripeEnabled, startCheckout } from './payments.js';
 
 // ---------- shared queries ----------
 
 const DROP_COLS = `
   d.id, d.title, d.item, d.category, d.emoji, d.story_text, d.gps_lat, d.gps_lng, d.walking_distance,
   d.difficulty, d.reward_value_usd, d.is_mystery, d.kid_friendly, d.quantity, d.remaining, d.photo IS NOT NULL AS has_photo,
-  d.status, d.created_at, d.destination_id, d.merchant_id,
+  d.status, d.created_at, d.destination_id, d.merchant_id, d.payment_status, d.fee_usd,
   m.name AS merchant, m.hours, m.category AS merchant_category, m.address,
   (SELECT ROUND(AVG(r.overall_score), 1) FROM redemption_ratings r JOIN redemptions x ON x.id = r.redemption_id WHERE x.merchant_id = m.id) AS rating,
   (SELECT COUNT(*) FROM redemption_ratings r JOIN redemptions x ON x.id = r.redemption_id WHERE x.merchant_id = m.id) AS rating_count`;
@@ -22,7 +23,7 @@ export function shapeDrop(r, here, { revealMystery = false } = {}) {
     item: r.is_mystery && !revealMystery ? null : r.item, mystery: !!r.is_mystery,
     lat: r.gps_lat, lng: r.gps_lng, walkingNote: r.walking_distance, difficulty: r.difficulty,
     value: r.reward_value_usd, kids: !!r.kid_friendly, remaining: r.remaining, quantity: r.quantity,
-    hasPhoto: !!r.has_photo, status: r.status, merchant: r.merchant, merchantId: r.merchant_id,
+    hasPhoto: !!r.has_photo, status: r.status, paymentStatus: r.payment_status, fee: r.fee_usd, merchant: r.merchant, merchantId: r.merchant_id,
     hours: r.hours, rating: r.rating, ratingCount: r.rating_count, destination: r.destination_id,
     distanceM: m, walkMin: m == null ? null : walkMin(m),
   };
@@ -227,7 +228,7 @@ export async function merchantMe(req, env, user) {
   const m = await env.DB.prepare('SELECT id, name, category, address, lat, lng, hours, status, destination_id FROM merchants WHERE id = ?').bind(id).first();
   if (!m) bad('Merchant not found', 404);
   const s = await getSettings(env.DB);
-  return json({ merchant: m, dropPrice: s.dropPrice });
+  return json({ merchant: m, dropPrice: s.dropPrice, payments: stripeEnabled(env) ? 'stripe' : 'invoice' });
 }
 
 export async function merchantDrops(req, env, user) {
@@ -254,10 +255,19 @@ export async function createDrop(req, env, user) {
   const row = await env.DB.prepare(
     `INSERT INTO treasure_drops(merchant_id, destination_id, title, item, category, emoji, story_text, gps_lat, gps_lng, walking_distance,
        difficulty, reward_value_usd, is_mystery, kid_friendly, quantity, remaining, fee_usd, photo, status)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending') RETURNING id, status, fee_usd`
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending') RETURNING id, title, item, quantity, status, fee_usd`
   ).bind(mid, m.destination_id, d.title, d.item, d.category, d.emoji, d.story_text, d.gps_lat ?? m.lat, d.gps_lng ?? m.lng,
     d.walking_distance, d.difficulty, d.reward_value_usd, d.is_mystery, d.kid_friendly, quantity, quantity, fee, photo).first();
-  return json({ drop: row, fee }, 201);
+  // HQ-created drops and free drops skip payment; otherwise Stripe if configured, else invoice.
+  if (user.role === 'admin' || fee <= 0) {
+    await env.DB.prepare(`UPDATE treasure_drops SET payment_status = 'waived' WHERE id = ?`).bind(row.id).run();
+    return json({ drop: { ...row, payment_status: 'waived' }, fee }, 201);
+  }
+  if (stripeEnabled(env)) {
+    const checkoutUrl = await startCheckout(env, req, row, m);
+    return json({ drop: { ...row, payment_status: 'unpaid' }, fee, checkoutUrl }, 201);
+  }
+  return json({ drop: { ...row, payment_status: 'invoice' }, fee }, 201);
 }
 
 export async function updateDrop(req, env, user, id) {
@@ -273,6 +283,12 @@ export async function updateDrop(req, env, user, id) {
     const allowed = { active: ['paused'], paused: ['active'] }[cur.status] || [];
     if (user.role !== 'admin' && !allowed.includes(b.status)) bad(`Cannot change status from ${cur.status} to ${b.status}`);
     d.status = user.role === 'admin' ? oneOf(b.status, ['pending', 'active', 'paused', 'expired', 'rejected'], 'status') : b.status;
+    if (d.status === 'active' && cur.status === 'pending' && cur.payment_status === 'unpaid' && b.paymentStatus !== 'waived')
+      bad('This treasure is waiting for the merchant to pay. Waive the fee to approve it anyway.', 402);
+  }
+  if (b.paymentStatus !== undefined) {
+    if (user.role !== 'admin') bad('Not allowed', 403);
+    d.payment_status = oneOf(b.paymentStatus, ['waived', 'invoice'], 'paymentStatus');
   }
   // Content edits on a live drop go back to HQ for review.
   const contentKeys = ['title', 'item', 'story_text', 'photo'];
@@ -437,11 +453,54 @@ async function linkMerchantUser(env, m) {
 export async function adminUpdateMerchant(req, env, user, id) {
   requireRole(user, 'admin');
   const b = await body(req, 5_000);
-  const status = oneOf(b.status, ['active', 'paused', 'declined'], 'status');
-  const m = await env.DB.prepare('UPDATE merchants SET status = ? WHERE id = ? RETURNING *').bind(status, id).first();
+  const set = {};
+  if (b.status !== undefined) set.status = oneOf(b.status, ['active', 'paused', 'declined'], 'status');
+  if (b.lat !== undefined && b.lng !== undefined) {
+    set.lat = num(b.lat, { min: -90, max: 90, name: 'Latitude' }); set.lng = num(b.lng, { min: -180, max: 180, name: 'Longitude' }); set.needs_location = 0;
+  }
+  for (const k of ['name', 'category', 'address', 'hours', 'phone', 'website']) if (b[k] !== undefined) set[k] = b[k] === '' ? null : str(b[k], { max: 200, name: k });
+  if (b.email !== undefined) set.contact_email = b.email ? str(b.email, { max: 200 }).toLowerCase() : null;
+  const keys = Object.keys(set);
+  if (!keys.length) bad('Nothing to update');
+  const m = await env.DB.prepare(`UPDATE merchants SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ? RETURNING *`).bind(...keys.map((k) => set[k]), id).first();
   if (!m) bad('Merchant not found', 404);
-  if (status === 'active') await linkMerchantUser(env, m);
+  if (m.status === 'active') await linkMerchantUser(env, m);
   return json({ merchant: m });
+}
+
+// Bulk import (pasted from Excel or a CSV/XLSX file, parsed in the browser).
+export async function adminImportMerchants(req, env, user) {
+  requireRole(user, 'admin');
+  const b = await body(req, 600_000);
+  const dest = await destinationOr404(env, b.destination);
+  const rows = Array.isArray(b.rows) ? b.rows : bad('No rows');
+  if (rows.length > 1000) bad('Please import at most 1,000 merchants at a time');
+  const status = b.activate ? 'active' : 'pending';
+  const { results: existing } = await env.DB.prepare('SELECT lower(name) n FROM merchants WHERE destination_id = ?').bind(dest.id).all();
+  const seen = new Set(existing.map((r) => r.n));
+  const clean = (v, max = 200) => (v == null ? null : String(v).trim().slice(0, max) || null);
+  const report = { added: 0, skipped: [], needsLocation: 0 };
+  const stmts = [];
+  rows.forEach((r, i) => {
+    const name = clean(r.name, 100);
+    if (!name || name.length < 2) { report.skipped.push({ row: i + 1, reason: 'missing name' }); return; }
+    if (seen.has(name.toLowerCase())) { report.skipped.push({ row: i + 1, name, reason: 'already exists' }); return; }
+    seen.add(name.toLowerCase());
+    let lat = Number(r.lat), lng = Number(r.lng), needs = 0;
+    const valid = Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 && !(lat === 0 && lng === 0) && r.lat !== '' && r.lng !== '' && r.lat != null && r.lng != null;
+    if (!valid) { lat = dest.center_lat; lng = dest.center_lng; needs = 1; report.needsLocation++; }
+    const email = clean(r.email, 200);
+    stmts.push(env.DB.prepare(`INSERT INTO merchants(destination_id, name, category, address, lat, lng, hours, contact_email, phone, website, status, needs_location)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).bind(dest.id, name, clean(r.category, 60) || 'Business', clean(r.address), lat, lng, clean(r.hours, 60),
+      email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email.toLowerCase() : null, clean(r.phone, 40), clean(r.website, 200), status, needs));
+    report.added++;
+  });
+  for (let i = 0; i < stmts.length; i += 50) await env.DB.batch(stmts.slice(i, i + 50));
+  if (status === 'active') {
+    const { results } = await env.DB.prepare(`SELECT * FROM merchants WHERE destination_id = ? AND contact_email IS NOT NULL AND status = 'active'`).bind(dest.id).all();
+    for (const m of results) await linkMerchantUser(env, m);
+  }
+  return json(report, 201);
 }
 
 export async function adminDrops(req, env, user) {

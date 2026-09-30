@@ -2,8 +2,9 @@
 import { HttpError, json, lastRaffleAt } from './lib.js';
 import { register, login, logout, currentUser, publicUser, requireRole } from './auth.js';
 import * as H from './hunt.js';
-import { askPolly } from './polly.js';
+import { askPolly, pollyTip } from './polly.js';
 import { runRaffle, raffleStatus, raffleDrawNow } from './raffle.js';
+import { payDrop, verifyCheckout, stripeWebhook } from './payments.js';
 
 const routes = [
   ['POST', /^\/api\/auth\/register$/, (r, e) => register(r, e)],
@@ -21,12 +22,16 @@ const routes = [
   ['GET', /^\/api\/me\/credits$/, (r, e, u) => H.myCredits(r, e, u)],
   ['POST', /^\/api\/redemptions\/(\d+)\/rating$/, (r, e, u, id) => H.rateRedemption(r, e, u, Number(id))],
   ['POST', /^\/api\/polly$/, (r, e, u) => askPolly(r, e, u)],
+  ['GET', /^\/api\/polly\/tip$/, (r, e, u) => pollyTip(r, e, u)],
 
   ['POST', /^\/api\/merchant\/apply$/, (r, e, u) => H.applyMerchant(r, e, u)],
   ['GET', /^\/api\/merchant\/me$/, (r, e, u) => H.merchantMe(r, e, u)],
   ['GET', /^\/api\/merchant\/drops$/, (r, e, u) => H.merchantDrops(r, e, u)],
   ['POST', /^\/api\/merchant\/drops$/, (r, e, u) => H.createDrop(r, e, u)],
   ['PATCH', /^\/api\/merchant\/drops\/(\d+)$/, (r, e, u, id) => H.updateDrop(r, e, u, Number(id))],
+  ['POST', /^\/api\/merchant\/drops\/(\d+)\/pay$/, (r, e, u, id) => payDrop(r, e, u, Number(id))],
+  ['GET', /^\/api\/merchant\/checkout\/([A-Za-z0-9_]+)$/, (r, e, u, sid) => verifyCheckout(r, e, u, sid)],
+  ['POST', /^\/api\/stripe\/webhook$/, (r, e) => stripeWebhook(r, e)],
   ['POST', /^\/api\/merchant\/lookup$/, (r, e, u) => H.lookupCode(r, e, u)],
   ['POST', /^\/api\/merchant\/confirm$/, (r, e, u) => H.confirmRedemption(r, e, u)],
   ['GET', /^\/api\/merchant\/stats$/, (r, e, u) => H.merchantStats(r, e, u)],
@@ -35,6 +40,7 @@ const routes = [
   ['GET', /^\/api\/admin\/overview$/, (r, e, u) => H.adminOverview(r, e, u)],
   ['GET', /^\/api\/admin\/merchants$/, (r, e, u) => H.adminMerchants(r, e, u)],
   ['POST', /^\/api\/admin\/merchants$/, (r, e, u) => H.adminCreateMerchant(r, e, u)],
+  ['POST', /^\/api\/admin\/merchants\/import$/, (r, e, u) => H.adminImportMerchants(r, e, u)],
   ['PATCH', /^\/api\/admin\/merchants\/(\d+)$/, (r, e, u, id) => H.adminUpdateMerchant(r, e, u, Number(id))],
   ['GET', /^\/api\/admin\/drops$/, (r, e, u) => H.adminDrops(r, e, u)],
   ['GET', /^\/api\/admin\/hunts$/, (r, e, u) => H.adminHunts(r, e, u)],

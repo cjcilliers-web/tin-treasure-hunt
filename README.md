@@ -15,6 +15,18 @@ The pilot destination is **Cozumel**.
 | 3. Polly | ✅ | `src/polly.js` is geo-aware and answers in English or Spanish. It handles "help me find treasure", food only, only free, walking distance, "I have kids" and "make today's hunt last one hour" (it builds a walking route). It also answers credits, raffle and how-it-works questions. Optionally uses Workers AI to understand free-form questions. It never invents treasures; answers always come from live data. |
 | 4. Raffle + QA | ✅ | `src/raffle.js` draws Sundays at 14:00 UTC from that week's confirmed redeemers, with one ticket per find and a 500-credit prize. Each week is drawn only once. `test/e2e.js` covers the full redemption flow. |
 
+**Also included:**
+
+- **Stripe payments:** a merchant pays the drop fee ($1 × number of drops) through Stripe Checkout when they create a treasure. Card payments work, and OXXO does too if it's switched on in Stripe. A webhook plus an instant check on return mark the treasure as paid. HQ can only approve paid treasures, but can waive the fee. Without Stripe keys, drops fall back to "invoice".
+- **Merchant import:** in TIN HQ → Merchants, upload an Excel/CSV file or paste rows straight from Excel.
+  - Columns are detected by their header name, in English or Spanish.
+  - Duplicate names are skipped.
+  - Rows without GPS are flagged 📍 and fixed by pasting Google Maps coordinates.
+- **Polly:**
+  - Speaks English, Spanish, Portuguese, French and German.
+  - Knows opening hours ("what's open now?", and routes only include open places).
+  - Shows a proactive tip on the Hunt screen: an open code that's about to expire, meal-time treasures nearby, or a raffle closing soon.
+
 There are three views in one app, switched by account role:
 
 - **Explorer:** Hunt, Map, Polly, My codes, Credits.
@@ -47,6 +59,26 @@ npm run db:migrate                            # creates the tables in the real D
 npm run deploy                                # publishes the Worker + pages
 ```
 
+### Stripe (drop-fee payments)
+
+```bash
+npx wrangler secret put STRIPE_SECRET_KEY        # sk_live_… (or sk_test_… to try it first)
+npx wrangler secret put STRIPE_WEBHOOK_SECRET    # whsec_… from the webhook below
+```
+
+Then set up the webhook:
+
+1. In Stripe, go to **Developers → Webhooks → Add endpoint**.
+2. Enter the URL `https://<your-domain>/api/stripe/webhook`.
+3. Select these events:
+   - `checkout.session.completed`
+   - `checkout.session.async_payment_succeeded`
+   - `checkout.session.async_payment_failed`
+   - `checkout.session.expired`
+4. Copy the signing secret into `STRIPE_WEBHOOK_SECRET`.
+
+Optional: turn on OXXO under Stripe → Settings → Payment methods.
+
 Then, in the Cloudflare dashboard, go to **Workers → tin-treasure-hunt → Settings → Domains & Routes** and add a custom domain, e.g. `hunt.tincommerce.com`.
 
 - **Admin:** the email in `ADMIN_EMAILS` (wrangler.toml) becomes TIN HQ admin when it signs up. Change or add emails there (comma-separated) and redeploy.
@@ -60,8 +92,17 @@ Then, in the Cloudflare dashboard, go to **Workers → tin-treasure-hunt → Set
 npm install
 npm run db:migrate:local && npm run db:seed:local
 npm run dev                      # http://localhost:8787
+node test/mock-stripe.js &       # fake Stripe for local tests (see .dev.vars below)
 npm run test:e2e                 # in a second terminal (needs Playwright)
 curl "http://localhost:8787/__scheduled?cron=0+14+*+*+SUN"   # fire the raffle
+```
+
+For local tests, a `.dev.vars` file is used (it is not committed):
+
+```
+STRIPE_SECRET_KEY=sk_test_mock
+STRIPE_WEBHOOK_SECRET=whsec_testsecret
+STRIPE_API_BASE=http://localhost:8799/v1
 ```
 
 ## Onboarding a real merchant
@@ -81,7 +122,6 @@ curl "http://localhost:8787/__scheduled?cron=0+14+*+*+SUN"   # fire the raffle
 ## Not in this build (per spec)
 
 - Spin & Win, the Love Drops Marketplace and Merchant Hunter.
-- Online card payment for drop fees. Fees are recorded per drop (`fee_usd`) for invoicing; Stripe can be added next.
 - Proof photos are stored in D1 as small compressed images. Move them to R2 if volume grows.
 
 ## Pilot success metrics (first 48 h)

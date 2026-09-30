@@ -92,6 +92,21 @@ async function boot() {
   startLocation();
   refreshCredits();
   setMode(S.mode, true);
+  handlePaymentReturn();
+}
+
+async function handlePaymentReturn() {
+  const paid = params.get('paid'), unpaid = params.get('unpaid');
+  if (!paid && !unpaid) return;
+  history.replaceState(null, '', location.pathname);
+  if (S.me.role === 'traveler') return;
+  S.mode = 'merchant'; saveUi(); setMode('merchant');
+  if (unpaid) { go('mList'); toast('Payment not finished. You can pay any time from My treasures.'); return; }
+  try {
+    const r = await api(`/api/merchant/checkout/${encodeURIComponent(paid)}`);
+    go('mList');
+    toast(r.paid ? `Payment received! “${r.title}” is with TIN HQ for approval.` : 'Payment is processing. We will update it shortly.');
+  } catch (e) { go('mList'); toast(e.message); }
 }
 
 async function refreshCredits() {
@@ -126,9 +141,13 @@ function render() {
   const active = { detail: 'hunt', qr: 'claims', rate: 'claims', mNew: 'mList', mEdit: 'mList', account: 'wallet' }[S.view] || S.view;
   navEl.innerHTML = nav.map(([v, l, i]) => `<button data-go="${v}" ${v === active ? 'aria-current="page"' : ''}>${ico(i)}${l}</button>`).join('');
   $$('#nav [data-go]').forEach((b) => (b.onclick = () => go(b.dataset.go)));
-  const el = $('#screen');
+  // Each render gets a fresh pane, so a slow earlier view can never overwrite a newer one.
+  const screen = $('#screen');
+  const el = document.createElement('div');
+  el.className = 'pane';
   el.innerHTML = '<div class="spin"></div>';
-  el.scrollTop = 0;
+  screen.replaceChildren(el);
+  screen.scrollTop = 0;
   const fn = VIEWS[S.view];
   Promise.resolve(fn ? fn(el, S.arg) : null).catch((e) => {
     if (e.status === 401) { location.href = '/'; return; }
@@ -148,7 +167,8 @@ VIEWS.hunt = async (el) => {
   <div class="theme"><div class="t">${esc(h ? `${h.emoji} ${h.name} in ${S.dest.name}` : `🗺️ Treasure Hunt ${S.dest.name}`)}</div>
     <small>${esc(h?.tagline || `Every verified find earns ${S.settings.creditsPerFind} credits and a raffle ticket.`)} Don't collect coupons. Collect Adventures™.</small></div>
   <div class="today" role="group" aria-label="Today's Treasures">${CATS.map((c) => `<button class="tt" data-c="${c}" aria-pressed="${S.cat === c}"><b>${data.counts[c]}</b>${CAT_EMO[c]} ${c}</button>`).join('')}</div>
-  <button class="askp" id="askp">🦜 Ask Polly: “Help me find treasure.”</button>
+  <div class="askp" id="tip" hidden></div>
+  <button class="askp" id="askp">🦜 ${esc(PL().ask)}</button>
   <div class="slider"><div class="lbl"><span>Search distance</span><b id="rv">${fmtD(radius)}</b></div>
     <input type="range" id="rad" min="0" max="${RADII.length - 1}" step="1" value="${S.radiusIdx}" aria-label="Search distance"></div>
   <div class="chips">${['All', ...CATS].map((c) => `<button class="chip" data-c="${c}" aria-pressed="${S.cat === c}">${c}</button>`).join('')}</div>
@@ -156,9 +176,26 @@ VIEWS.hunt = async (el) => {
   $('#rad', el).oninput = (e) => { $('#rv').textContent = fmtD(RADII[e.target.value]); };
   $('#rad', el).onchange = (e) => { S.radiusIdx = Number(e.target.value); saveUi(); render(); };
   $$('[data-c]', el).forEach((b) => (b.onclick = () => { S.cat = S.cat === b.dataset.c && b.classList.contains('tt') ? 'All' : b.dataset.c; render(); }));
-  $('#askp', el).onclick = () => { go('polly'); setTimeout(() => pollyAsk('Help me find treasure'), 50); };
+  $('#askp', el).onclick = () => { go('polly'); setTimeout(() => pollyAsk(PL().sugg[0]), 50); };
+  loadTip(el);
   $$('[data-d]', el).forEach((b) => (b.onclick = () => go('detail', Number(b.dataset.d))));
 };
+
+async function loadTip(el) {
+  try {
+    const tip = await api(`/api/polly/tip?destination=${S.dest.id}&lang=${PL().code}${hereQs()}`);
+    const box = $('#tip', el); if (!box || tip.kind === 'none') return;
+    box.hidden = false;
+    box.innerHTML = `<div style="display:flex;gap:10px;align-items:flex-start"><span class="parrot" style="width:32px;height:32px;font-size:1rem;flex:none">🦜</span><div style="display:grid;gap:8px;min-width:0">
+      <span>${esc(tip.text)}</span>
+      ${tip.drops?.length ? `<div class="mini" style="display:grid;gap:6px">${tip.drops.map((d) => `<button class="chip" style="text-align:left" data-td="${d.id}">${esc(d.emoji)} ${esc(d.title)} · ${fmtD(d.distanceM)}</button>`).join('')}</div>` : ''}
+      ${tip.action === 'qr' ? `<button class="sbtn gold" data-tq="${tip.dropId}" style="justify-self:start">${esc(PL().showCode)}</button>` : ''}
+      ${tip.ask ? `<button class="sbtn" data-ta style="justify-self:start">${esc(PL().yes)}</button>` : ''}</div></div>`;
+    $$('[data-td]', box).forEach((b) => (b.onclick = () => go('detail', Number(b.dataset.td))));
+    const q = $('[data-tq]', box); if (q) q.onclick = () => go('qr', Number(q.dataset.tq));
+    const a = $('[data-ta]', box); if (a) a.onclick = () => { go('polly'); setTimeout(() => pollyAsk(tip.ask), 50); };
+  } catch {}
+}
 
 function dropCard(d) {
   const st = d.myStatus === 'redeemed' ? 'Found ✓' : d.myStatus === 'claimed' ? 'Claimed' : `${d.remaining} left`;
@@ -324,13 +361,27 @@ VIEWS.apply = async (el) => {
 };
 
 /* ---------- Polly ---------- */
+const POLLY_UI = {
+  en: { hello: "Hola! I'm Polly, your treasure guide. Tell me what you're in the mood for, who you're with, or how much time you have.", ask: 'Ask Polly: “Help me find treasure.”', ph: 'Ask Polly…', showCode: 'Show my code', yes: 'Yes, plan it',
+    sugg: ['Help me find treasure', 'I only want food treasures', 'Treasures within walking distance', 'I have kids', "Make today's hunt last one hour", 'What is open now?', 'How many credits do I have?'] },
+  es: { hello: '¡Hola! Soy Polly, tu guía de tesoros. Dime qué se te antoja, con quién vas o cuánto tiempo tienes.', ask: 'Pregúntale a Polly: “Ayúdame a encontrar tesoros.”', ph: 'Pregúntale a Polly…', showCode: 'Ver mi código', yes: 'Sí, ármala',
+    sugg: ['Ayúdame a encontrar tesoros', 'Solo quiero tesoros de comida', 'Tesoros cerca a pie', 'Tengo niños', 'Haz que la búsqueda de hoy dure una hora', '¿Qué está abierto ahora?', '¿Cuántos créditos tengo?'] },
+  pt: { hello: 'Olá! Sou a Polly, sua guia de tesouros. Diga o que você quer, com quem está ou quanto tempo tem.', ask: 'Pergunte à Polly: “Me ajude a achar tesouros.”', ph: 'Pergunte à Polly…', showCode: 'Mostrar meu código', yes: 'Sim, monte a rota',
+    sugg: ['Me ajude a achar tesouros', 'Só quero tesouros de comida', 'Tesouros perto a pé', 'Tenho crianças', 'Faça a caça de hoje durar uma hora', 'O que está aberto agora?', 'Quantos créditos eu tenho?'] },
+  fr: { hello: 'Bonjour ! Je suis Polly, votre guide des trésors. Dites-moi ce qui vous fait envie, avec qui vous êtes ou combien de temps vous avez.', ask: 'Demandez à Polly : « Aide-moi à trouver des trésors. »', ph: 'Demandez à Polly…', showCode: 'Voir mon code', yes: 'Oui, prépare-la',
+    sugg: ['Aide-moi à trouver des trésors', 'Je veux seulement des trésors à manger', 'Trésors à pied tout près', "J'ai des enfants", "Fais une chasse d'une heure aujourd'hui", "Qu'est-ce qui est ouvert maintenant ?", 'Combien de crédits ai-je ?'] },
+  de: { hello: 'Hallo! Ich bin Polly, deine Schatzführerin. Sag mir, worauf du Lust hast, mit wem du unterwegs bist oder wie viel Zeit du hast.', ask: 'Frag Polly: „Hilf mir, Schätze zu finden.“', ph: 'Frag Polly…', showCode: 'Meinen Code zeigen', yes: 'Ja, plane sie',
+    sugg: ['Hilf mir, Schätze zu finden', 'Ich möchte nur Essens-Schätze', 'Schätze zu Fuß in der Nähe', 'Ich habe Kinder', 'Plane eine einstündige Schatzsuche', 'Was ist jetzt geöffnet?', 'Wie viele Credits habe ich?'] },
+};
+const PL = () => ({ code: POLLY_UI[S.me?.language] ? S.me.language : 'en', ...(POLLY_UI[S.me?.language] || POLLY_UI.en) });
+
 VIEWS.polly = async (el) => {
-  if (!S.chat.length) S.chat.push({ p: true, t: "Hola! I'm Polly, your treasure guide. Tell me what you're in the mood for, who you're with, or how much time you have." });
-  const sugg = ['Help me find treasure', 'I only want food treasures', 'Treasures within walking distance', 'I have kids', "Make today's hunt last one hour", 'How many credits do I have?'];
+  if (!S.chat.length) S.chat.push({ p: true, t: PL().hello });
+  const sugg = PL().sugg;
   el.innerHTML = `<div class="pollyhead"><span class="parrot">🦜</span><div><b>Polly</b><div class="note">Knows where you are, what's live and your credits</div></div></div>
   <div class="chat" id="chat" aria-live="polite"></div>
   <div class="chips">${sugg.map((s) => `<button class="chip" data-s="${esc(s)}">${esc(s)}</button>`).join('')}</div>
-  <form class="ask" id="askf"><input id="q" placeholder="Ask Polly… (English o español)" autocomplete="off" aria-label="Ask Polly"><button>Ask</button></form>`;
+  <form class="ask" id="askf"><input id="q" placeholder="${esc(PL().ph)}" autocomplete="off" aria-label="Ask Polly"><button>Ask</button></form>`;
   drawChat();
   $$('[data-s]', el).forEach((b) => (b.onclick = () => pollyAsk(b.dataset.s)));
   $('#askf', el).onsubmit = (e) => { e.preventDefault(); const q = $('#q').value.trim(); if (q) { $('#q').value = ''; pollyAsk(q); } };
@@ -366,7 +417,7 @@ async function merchantGuard(el) {
     $$('[data-m]', el).forEach((b) => (b.onclick = () => { S.merchantId = Number(b.dataset.m); render(); }));
     return false;
   }
-  if (!S.merchant || S.merchant.id !== (S.merchantId || S.me.merchantId)) S.merchant = (await api(`/api/merchant/me${mq()}`)).merchant;
+  if (!S.merchant || S.merchant.id !== (S.merchantId || S.me.merchantId)) { const r = await api(`/api/merchant/me${mq()}`); S.merchant = r.merchant; S.payments = r.payments; S.settings.dropPrice = r.dropPrice; }
   setLoc(`Merchant · ${S.merchant.name}`);
   return true;
 }
@@ -474,13 +525,15 @@ VIEWS.mList = async (el) => {
   el.innerHTML = `<button class="btn" id="nd">＋ Create a new treasure</button>
   ${drops.length ? drops.map((d) => `<div class="card" style="gap:8px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b>${esc(d.emoji)} ${esc(d.title)}</b>${pill(d.status)}</div>
     <div class="note">${esc(d.item)} · ${d.remaining}/${d.quantity} left · ${d.redeemed} redeemed · ${d.waiting} waiting</div>
-    <div class="row">${d.status === 'active' ? `<button class="sbtn stop" data-p="${d.id}">Pause</button>` : d.status === 'paused' ? `<button class="sbtn go" data-r="${d.id}">Resume</button>` : ''}<button class="sbtn" data-e="${d.id}">Edit</button></div></div>`).join('')
+    ${d.paymentStatus === 'unpaid' ? `<div class="note" style="color:var(--warn)">💳 $${d.fee} to pay before TIN HQ can approve</div>` : d.paymentStatus === 'paid' ? '<div class="note" style="color:var(--ok)">💳 Paid</div>' : ''}
+    <div class="row">${d.paymentStatus === 'unpaid' ? `<button class="sbtn gold" data-pay="${d.id}">Pay $${d.fee}</button>` : ''}${d.status === 'active' ? `<button class="sbtn stop" data-p="${d.id}">Pause</button>` : d.status === 'paused' ? `<button class="sbtn go" data-r="${d.id}">Resume</button>` : ''}<button class="sbtn" data-e="${d.id}">Edit</button></div></div>`).join('')
     : '<p class="empty">No treasures yet. Create your first adventure!</p>'}`;
   $('#nd', el).onclick = () => go('mNew');
   const patch = async (id, body) => { try { await api(`/api/merchant/drops/${id}${mq()}`, { method: 'PATCH', body }); render(); } catch (e) { toast(e.message); } };
   $$('[data-p]', el).forEach((b) => (b.onclick = () => patch(b.dataset.p, { status: 'paused' })));
   $$('[data-r]', el).forEach((b) => (b.onclick = () => patch(b.dataset.r, { status: 'active' })));
   $$('[data-e]', el).forEach((b) => (b.onclick = () => go('mEdit', drops.find((d) => d.id === Number(b.dataset.e)))));
+  $$('[data-pay]', el).forEach((b) => (b.onclick = async () => { b.disabled = true; try { const r = await api(`/api/merchant/drops/${b.dataset.pay}/pay${mq()}`, { method: 'POST' }); location.href = r.checkoutUrl; } catch (e) { toast(e.message); b.disabled = false; } }));
 };
 
 function dropForm(el, d) {
@@ -505,7 +558,7 @@ function dropForm(el, d) {
     ${edit ? '<p class="note">Changes to the name, reward, story or photo go back to TIN HQ for a quick review.</p>' : `<div class="sum"><span>Total to pay</span><b id="tot">$${10 * price}</b></div>`}
     <div class="err" id="er"></div>
     <button class="btn" type="submit">${edit ? 'Save changes' : 'Pay & send for approval'}</button>
-    ${edit ? '' : '<p class="note">Payment: TIN invoices the drop fee. Online card payment comes next.</p>'}
+    ${edit ? '' : S.payments === 'stripe' ? '<p class="note">🔒 Secure payment by Stripe. Card, and OXXO where available.</p>' : '<p class="note">TIN will send you an invoice for the drop fee.</p>'}
   </form>`;
   let photo;
   $('#bk', el).onclick = () => go('mList');
@@ -520,7 +573,11 @@ function dropForm(el, d) {
     const btn = $('button[type=submit]', el); btn.disabled = true;
     try {
       if (edit) { const r = await api(`/api/merchant/drops/${d.id}${mq()}`, { method: 'PATCH', body }); toast(r.status === 'pending' ? 'Saved. Sent to TIN HQ for review.' : 'Saved'); }
-      else { const r = await api(`/api/merchant/drops${mq()}`, { method: 'POST', body }); toast(`Sent to TIN HQ for approval · $${r.fee}`); }
+      else {
+        const r = await api(`/api/merchant/drops${mq()}`, { method: 'POST', body });
+        if (r.checkoutUrl) { btn.textContent = 'Opening secure payment…'; location.href = r.checkoutUrl; return; }
+        toast(r.drop.payment_status === 'waived' ? 'Treasure created' : `Sent to TIN HQ for approval · $${r.fee}`);
+      }
       go('mList');
     } catch (err) { $('#er').textContent = err.message; btn.disabled = false; }
   };
@@ -582,25 +639,106 @@ HQ.merchants = async (el) => {
   const { merchants } = await api('/api/admin/merchants');
   const pill = (s) => `<span class="pill ${s === 'active' ? 'live' : s === 'declined' ? 'ended' : s}">${s}</span>`;
   el.innerHTML = `<div class="card"><h3>Merchants</h3><div class="tbl"><table><thead><tr><th>Name</th><th>Type</th><th>Status</th><th>Contact</th><th class="n">Drops</th><th class="n">Redeemed</th><th class="n">Rating</th><th></th></tr></thead><tbody>
-  ${merchants.map((m) => `<tr><td>${esc(m.name)} ${m.is_sample ? '<span class="sample">sample</span>' : ''}</td><td>${esc(m.category)}</td><td>${pill(m.status)}</td><td>${esc(m.contact_email || '')}</td><td class="n">${m.drops}</td><td class="n">${m.redemptions}</td><td class="n">${m.rating ?? '—'}</td>
+  ${merchants.map((m) => `<tr><td>${esc(m.name)} ${m.is_sample ? '<span class="sample">sample</span>' : ''}${m.needs_location ? ` <button class="sbtn" data-loc="${m.id}" title="Paste coordinates from Google Maps">📍 Set location</button>` : ''}</td><td>${esc(m.category)}</td><td>${pill(m.status)}</td><td>${esc(m.contact_email || '')}</td><td class="n">${m.drops}</td><td class="n">${m.redemptions}</td><td class="n">${m.rating ?? '—'}</td>
     <td>${m.status === 'pending' ? `<button class="sbtn go" data-s="active" data-id="${m.id}">Approve</button> <button class="sbtn stop" data-s="declined" data-id="${m.id}">Decline</button>` : m.status === 'active' ? `<button class="sbtn stop" data-s="paused" data-id="${m.id}">Pause</button>` : `<button class="sbtn go" data-s="active" data-id="${m.id}">Activate</button>`}</td></tr>`).join('')}
   </tbody></table></div></div>
+  <div class="card"><h3>Import merchants</h3>
+  <p class="note">Upload an Excel or CSV file, or copy rows from Excel and paste them below. The first row must be headers, e.g. <b>Name, Category, Address, Latitude, Longitude, Hours, Email, Phone, Website</b>. Only Name is required. Rows without GPS are placed at the town centre and marked 📍 so you can fix them.</p>
+  <div class="hqform"><label>Excel or CSV file<input type="file" id="imf" accept=".xlsx,.xls,.csv,.tsv,.txt"></label>
+    <label style="display:flex;gap:6px;align-items:center;flex-direction:row"><input type="checkbox" id="imact" style="width:auto"> Activate right away (otherwise they wait in Pending)</label></div>
+  <textarea id="imt" rows="5" placeholder="…or paste rows from Excel here" style="background:var(--deep);border:1px solid var(--line);border-radius:8px;padding:8px 10px;width:100%"></textarea>
+  <div id="imp"></div></div>
   <div class="card"><h3>Add a merchant</h3><p class="note">If the owner already has a TIN account with this email, it becomes their merchant login. Otherwise they sign up with it and HQ re-activates the merchant to link it.</p>
   <form class="hqform" id="af"><label>Business name<input name="name" required></label><label>Type<input name="category" required placeholder="Restaurant"></label><label>Owner email<input name="email" type="email"></label>
   <label>Latitude<input name="lat" required value="${S.dest.lat}"></label><label>Longitude<input name="lng" required value="${S.dest.lng}"></label><label>Hours<input name="hours" placeholder="09:00–18:00"></label><label>Address<input name="address"></label><button class="sbtn gold">Add merchant</button></form></div>`;
   $$('[data-s]', el).forEach((b) => (b.onclick = async () => { try { await api(`/api/admin/merchants/${b.dataset.id}`, { method: 'PATCH', body: { status: b.dataset.s } }); hqToast('Updated'); hqRender(); } catch (e) { hqToast(e.message); } }));
+  $$('[data-loc]', el).forEach((b) => (b.onclick = async () => {
+    const v = prompt('Paste the GPS coordinates (from Google Maps, right-click the place → copy the numbers), e.g. 20.5112, -86.9468');
+    if (!v) return; const m = v.match(/(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/);
+    if (!m) return hqToast('Please paste two numbers separated by a comma');
+    try { await api(`/api/admin/merchants/${b.dataset.loc}`, { method: 'PATCH', body: { lat: Number(m[1]), lng: Number(m[2]) } }); hqToast('Location saved'); hqRender(); } catch (e) { hqToast(e.message); }
+  }));
+  let importRows = [];
+  const showPreview = () => {
+    const box = $('#imp');
+    if (!importRows.length) { box.innerHTML = '<p class="note">No rows found. Check that the first row has a Name column.</p>'; return; }
+    const noGps = importRows.filter((r) => r.lat === '' || r.lat == null || r.lng === '' || r.lng == null).length;
+    box.innerHTML = `<p class="note"><b>${importRows.length}</b> merchants ready${noGps ? ` · ${noGps} without GPS` : ''}. Duplicates of existing names are skipped.</p>
+      <div class="tbl"><table><thead><tr><th>Name</th><th>Category</th><th>Address</th><th>GPS</th><th>Email</th></tr></thead><tbody>
+      ${importRows.slice(0, 8).map((r) => `<tr><td>${esc(r.name)}</td><td>${esc(r.category || '')}</td><td>${esc(r.address || '')}</td><td>${r.lat !== '' && r.lat != null ? `${esc(r.lat)}, ${esc(r.lng)}` : '📍'}</td><td>${esc(r.email || '')}</td></tr>`).join('')}
+      </tbody></table></div>${importRows.length > 8 ? `<p class="note">…and ${importRows.length - 8} more</p>` : ''}
+      <button class="sbtn gold" id="imgo">Import ${importRows.length} merchants</button>`;
+    $('#imgo').onclick = async () => {
+      $('#imgo').disabled = true;
+      try { const r = await api('/api/admin/merchants/import', { method: 'POST', body: { rows: importRows, destination: S.dest.id, activate: $('#imact').checked } });
+        hqToast(`Imported ${r.added} merchants${r.skipped.length ? `, skipped ${r.skipped.length}` : ''}${r.needsLocation ? `, ${r.needsLocation} need GPS` : ''}`); hqRender(); }
+      catch (e) { hqToast(e.message); $('#imgo').disabled = false; }
+    };
+  };
+  $('#imt', el).oninput = (e) => { importRows = mapRows(parseDelimited(e.target.value)); showPreview(); };
+  $('#imf', el).onchange = async (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    try {
+      if (/\.xlsx?$/i.test(f.name)) { await loadScript('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'); const wb = XLSX.read(await f.arrayBuffer()); importRows = mapRows(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '' })); }
+      else importRows = mapRows(parseDelimited(await f.text()));
+      showPreview();
+    } catch (err) { hqToast(`Could not read that file: ${err.message}`); }
+  };
   $('#af', el).onsubmit = async (e) => { e.preventDefault(); const f = Object.fromEntries(new FormData(e.target)); try { await api('/api/admin/merchants', { method: 'POST', body: { ...f, destination: S.dest.id } }); hqToast('Merchant added'); hqRender(); } catch (err) { hqToast(err.message); } };
 };
+
+function loadScript(src) {
+  return new Promise((res, rej) => { if ([...document.scripts].some((s) => s.src === src)) return res(); const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('could not load reader')); document.head.appendChild(s); });
+}
+// Parse CSV / TSV (Excel paste) into rows of cells, honouring quotes.
+function parseDelimited(text) {
+  text = String(text || '').replace(/^\uFEFF/, '');
+  const first = text.split(/\r?\n/)[0] || '';
+  const sep = first.includes('\t') ? '\t' : (first.split(';').length > first.split(',').length ? ';' : ',');
+  const rows = []; let row = [], cell = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) { if (c === '"' && text[i + 1] === '"') { cell += '"'; i++; } else if (c === '"') q = false; else cell += c; continue; }
+    if (c === '"' && cell === '') q = true;
+    else if (c === sep) { row.push(cell); cell = ''; }
+    else if (c === '\n' || c === '\r') { if (c === '\r' && text[i + 1] === '\n') i++; row.push(cell); rows.push(row); row = []; cell = ''; }
+    else cell += c;
+  }
+  if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+  return rows.filter((r) => r.some((x) => String(x).trim() !== ''));
+}
+const HEAD = {
+  name: ['name', 'business', 'business name', 'merchant', 'merchant name', 'nombre', 'negocio', 'company'],
+  category: ['category', 'type', 'categoria', 'categoría', 'tipo', 'tin category', 'business type'],
+  address: ['address', 'direccion', 'dirección', 'street', 'location'],
+  lat: ['lat', 'latitude', 'latitud'], lng: ['lng', 'lon', 'long', 'longitude', 'longitud'],
+  gps: ['gps', 'coordinates', 'coords', 'coordenadas', 'lat/lng', 'lat,lng'],
+  hours: ['hours', 'opening hours', 'horario', 'open'], email: ['email', 'e-mail', 'correo', 'mail'],
+  phone: ['phone', 'tel', 'telephone', 'telefono', 'teléfono', 'whatsapp', 'mobile'], website: ['website', 'web', 'url', 'site', 'sitio'],
+};
+function mapRows(rows) {
+  if (rows.length < 2) return [];
+  const heads = rows[0].map((h) => String(h).trim().toLowerCase());
+  const col = {}; for (const [k, names] of Object.entries(HEAD)) { const i = heads.findIndex((h) => names.includes(h)); if (i >= 0) col[k] = i; }
+  if (col.name == null) return [];
+  return rows.slice(1).map((r) => {
+    const g = (k) => (col[k] == null ? '' : String(r[col[k]] ?? '').trim());
+    let lat = g('lat'), lng = g('lng');
+    if ((!lat || !lng) && g('gps')) { const m = g('gps').match(/(-?\d+(?:\.\d+)?)\s*[,;]\s*(-?\d+(?:\.\d+)?)/); if (m) { lat = m[1]; lng = m[2]; } }
+    return { name: g('name'), category: g('category'), address: g('address'), lat, lng, hours: g('hours'), email: g('email'), phone: g('phone'), website: g('website') };
+  }).filter((r) => r.name);
+}
 
 HQ.drops = async (el) => {
   const { drops } = await api('/api/admin/drops');
   const pill = (s) => `<span class="pill ${s === 'active' ? 'live' : s === 'rejected' || s === 'expired' ? 'ended' : s}">${s === 'active' ? 'live' : s}</span>`;
-  el.innerHTML = `<div class="card"><h3>Treasure Drops</h3><div class="tbl"><table><thead><tr><th>Treasure</th><th>Merchant</th><th>Story</th><th>Status</th><th class="n">Left</th><th class="n">Redeemed</th><th class="n">Fee</th><th></th></tr></thead><tbody>
-  ${drops.map((d) => `<tr><td>${esc(d.emoji)} <b>${esc(d.title)}</b><div class="note">${esc(d.item)} · ${esc(d.category)} · ${esc(d.difficulty)}</div></td><td>${esc(d.merchant)}</td><td style="max-width:300px" class="note">${esc(d.story)}</td><td>${pill(d.status)}</td>
+  el.innerHTML = `<div class="card"><h3>Treasure Drops</h3><div class="tbl"><table><thead><tr><th>Treasure</th><th>Merchant</th><th>Story</th><th>Status</th><th>Payment</th><th class="n">Left</th><th class="n">Redeemed</th><th class="n">Fee</th><th></th></tr></thead><tbody>
+  ${drops.map((d) => `<tr><td>${esc(d.emoji)} <b>${esc(d.title)}</b><div class="note">${esc(d.item)} · ${esc(d.category)} · ${esc(d.difficulty)}</div></td><td>${esc(d.merchant)}</td><td style="max-width:300px" class="note">${esc(d.story)}</td><td>${pill(d.status)}</td><td><span class="pill ${d.paymentStatus === 'unpaid' ? 'pending' : d.paymentStatus === 'paid' ? 'live' : 'draft'}">${d.paymentStatus}</span></td>
     <td class="n">${d.remaining}/${d.quantity}</td><td class="n">${d.redeemed}</td><td class="n">$${d.fee}</td>
-    <td>${d.status === 'pending' ? `<button class="sbtn go" data-s="active" data-id="${d.id}">Approve</button> <button class="sbtn stop" data-s="rejected" data-id="${d.id}">Reject</button>` : d.status === 'active' ? `<button class="sbtn stop" data-s="paused" data-id="${d.id}">Pause</button>` : d.status === 'paused' ? `<button class="sbtn go" data-s="active" data-id="${d.id}">Resume</button>` : ''}</td></tr>`).join('')}
+    <td>${d.status === 'pending' && d.paymentStatus === 'unpaid' ? `<button class="sbtn" data-waive="${d.id}">Waive fee &amp; approve</button> ` : ''}${d.status === 'pending' && d.paymentStatus !== 'unpaid' ? `<button class="sbtn go" data-s="active" data-id="${d.id}">Approve</button> <button class="sbtn stop" data-s="rejected" data-id="${d.id}">Reject</button>` : d.status === 'pending' ? `<button class="sbtn stop" data-s="rejected" data-id="${d.id}">Reject</button>` : d.status === 'active' ? `<button class="sbtn stop" data-s="paused" data-id="${d.id}">Pause</button>` : d.status === 'paused' ? `<button class="sbtn go" data-s="active" data-id="${d.id}">Resume</button>` : ''}</td></tr>`).join('')}
   </tbody></table></div></div>`;
   $$('[data-s]', el).forEach((b) => (b.onclick = async () => { const d = drops.find((x) => x.id === Number(b.dataset.id)); try { await api(`/api/merchant/drops/${d.id}?merchant=${d.merchantId}`, { method: 'PATCH', body: { status: b.dataset.s } }); hqToast('Updated'); hqRender(); } catch (e) { hqToast(e.message); } }));
+  $$('[data-waive]', el).forEach((b) => (b.onclick = async () => { const d = drops.find((x) => x.id === Number(b.dataset.waive)); if (!confirm(`Waive the $${d.fee} fee and approve “${d.title}”?`)) return; try { await api(`/api/merchant/drops/${d.id}?merchant=${d.merchantId}`, { method: 'PATCH', body: { status: 'active', paymentStatus: 'waived' } }); hqToast('Fee waived, treasure live'); hqRender(); } catch (e) { hqToast(e.message); } }));
 };
 
 HQ.hunts = async (el) => {
