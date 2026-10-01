@@ -200,7 +200,7 @@ input[type=range]{width:100%;accent-color:var(--gold)}
 textarea{font:inherit}
 
 /* live app additions */
-.stage.app{padding-block:20px}
+.stage.app{padding-block:20px;align-content:flex-start}
 .auth{width:min(420px,100%);display:grid;gap:14px;background:var(--deep);border:1px solid var(--line);border-radius:22px;padding:22px}
 .auth h2{font-family:var(--f-display);font-weight:400;margin:0;font-size:1.5rem}
 .err{color:#f08c7c;font-size:.85rem;min-height:1em}
