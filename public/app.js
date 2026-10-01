@@ -29,7 +29,7 @@ const ICON = {
 const ico = (n) => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICON[n]}</svg>`;
 const CATS = ['Food', 'Drink', 'Dessert', 'Adventure', 'Shopping', 'Mystery'];
 const CAT_EMO = { Food: '🍔', Drink: '🍺', Dessert: '🍦', Adventure: '🧭', Shopping: '🛍️', Mystery: '🎁' };
-const RADII = [100, 1000, 5000, 10000];
+const RADII = [100, 1000, 5000, 10000, 50000]; // last stop = everything
 
 function toast(msg, where = $('#phone')) {
   $$('.toast').forEach((t) => t.remove());
@@ -61,6 +61,7 @@ function startLocation() {
     if (far) { S.locSource = 'center'; setLoc(`Not in ${S.dest.name} yet · showing from town`); return; }
     const moved = !S.here || haversine(g, S.here) > 40;
     S.here = g; S.locSource = 'gps'; setLoc(`Your location · ${S.dest.name}`);
+    if (S.view === 'detail' && S.gate) S.gate();
     if (moved && S.mode === 'traveler' && ['hunt', 'map'].includes(S.view)) render();
   }, () => setLoc(`${S.dest.name} · town centre (location off)`), { enableHighAccuracy: true, maximumAge: 15000, timeout: 20000 });
 }
@@ -169,11 +170,11 @@ VIEWS.hunt = async (el) => {
   <div class="today" role="group" aria-label="Today's Treasures">${CATS.map((c) => `<button class="tt" data-c="${c}" aria-pressed="${S.cat === c}"><b>${data.counts[c]}</b>${CAT_EMO[c]} ${c}</button>`).join('')}</div>
   <div class="askp" id="tip" hidden></div>
   <button class="askp" id="askp">🦜 ${esc(PL().ask)}</button>
-  <div class="slider"><div class="lbl"><span>Search distance</span><b id="rv">${fmtD(radius)}</b></div>
+  <div class="slider"><div class="lbl"><span>Search distance</span><b id="rv">${radLabel(S.radiusIdx)}</b></div>
     <input type="range" id="rad" min="0" max="${RADII.length - 1}" step="1" value="${S.radiusIdx}" aria-label="Search distance"></div>
   <div class="chips">${['All', ...CATS].map((c) => `<button class="chip" data-c="${c}" aria-pressed="${S.cat === c}">${c}</button>`).join('')}</div>
-  ${data.drops.length ? data.drops.map(dropCard).join('') : `<p class="empty">No treasures within ${fmtD(radius)}. Slide the distance wider or ask Polly.</p>`}`;
-  $('#rad', el).oninput = (e) => { $('#rv').textContent = fmtD(RADII[e.target.value]); };
+  ${data.drops.length ? data.drops.map(dropCard).join('') : `<p class="empty">No treasures within ${radLabel(S.radiusIdx)}. Slide the distance wider or ask Polly.</p>`}`;
+  $('#rad', el).oninput = (e) => { $('#rv').textContent = radLabel(Number(e.target.value)); };
   $('#rad', el).onchange = (e) => { S.radiusIdx = Number(e.target.value); saveUi(); render(); };
   $$('[data-c]', el).forEach((b) => (b.onclick = () => { S.cat = S.cat === b.dataset.c && b.classList.contains('tt') ? 'All' : b.dataset.c; render(); }));
   $('#askp', el).onclick = () => { go('polly'); setTimeout(() => pollyAsk(PL().sugg[0]), 50); };
@@ -196,6 +197,8 @@ async function loadTip(el) {
     const a = $('[data-ta]', box); if (a) a.onclick = () => { go('polly'); setTimeout(() => pollyAsk(tip.ask), 50); };
   } catch {}
 }
+
+const radLabel = (i) => (i === RADII.length - 1 ? 'All' : fmtD(RADII[i]));
 
 function dropCard(d) {
   const st = d.myStatus === 'redeemed' ? 'Found ✓' : d.myStatus === 'claimed' ? 'Claimed' : `${d.remaining} left`;
@@ -247,18 +250,40 @@ VIEWS.detail = async (el, id) => {
   ${d.walkingNote ? `<p class="note">🚶 ${esc(d.walkingNote)}</p>` : ''}
   ${claim?.status === 'redeemed' ? `<p class="empty">You found this treasure ✓</p>` :
     claim ? `<button class="btn" id="showqr">Show my code</button>` :
-    `<button class="btn" id="claim">Claim this treasure</button>`}
+    `<div class="gate" id="gate"></div><button class="btn" id="claim">Claim this treasure</button>`}
   <a class="btn ghost" href="${dirUrl}" target="_blank" rel="noopener">Walking directions</a>
   <p class="note">Credits are added only after ${esc(d.merchant)} confirms your visit.</p>`;
   $('#bk', el).onclick = () => go('hunt');
   const c = $('#claim', el);
-  if (c) c.onclick = async () => {
-    c.disabled = true; c.textContent = 'Claiming…';
-    try { await api(`/api/drops/${d.id}/claim`, { method: 'POST' }); toast('Treasure claimed! Show your code at the counter.'); go('qr', d.id); }
-    catch (e) { toast(e.message); c.disabled = false; c.textContent = 'Claim this treasure'; }
-  };
+  if (c) {
+    S.gate = () => claimGate(d, c);
+    S.gate();
+    c.onclick = async () => {
+      if (!S.gate()) return;
+      c.disabled = true; c.textContent = 'Claiming…';
+      try { await api(`/api/drops/${d.id}/claim`, { method: 'POST', body: { lat: S.here.lat, lng: S.here.lng } }); toast('Treasure claimed! Show your code at the counter.'); go('qr', d.id); }
+      catch (e) { toast(e.message); c.disabled = false; c.textContent = 'Claim this treasure'; S.gate(); }
+    };
+  }
   const q = $('#showqr', el); if (q) q.onclick = () => go('qr', d.id);
 };
+
+// Explorers can browse from anywhere, but can only claim when standing at the treasure.
+function claimGate(d, btn) {
+  const gate = $('#gate'); if (!gate || !btn.isConnected) return false;
+  const limit = S.settings.claimRadius ?? 10;
+  if (S.locSource !== 'gps') {
+    gate.innerHTML = `📍 Turn on location to claim. You must be within <b>${limit} m</b> of the treasure.`;
+    btn.disabled = true; return false;
+  }
+  const away = Math.round(haversine(S.here, { lat: d.lat, lng: d.lng }));
+  if (away > limit) {
+    gate.innerHTML = `🚶 You're <b>${fmtD(away)}</b> away. Walk to within <b>${limit} m</b> to claim it.`;
+    btn.disabled = true; return false;
+  }
+  gate.innerHTML = `✅ You're here! Claim it before another explorer does.`;
+  btn.disabled = false; return true;
+}
 
 VIEWS.qr = async (el, id) => {
   const { drop: d, claim } = await api(`/api/drops/${id}`);
@@ -774,8 +799,10 @@ HQ.settings = async (el) => {
     <label>Raffle prize (credits)<input name="rafflePrize" type="number" min="0" value="${s.rafflePrize}"></label>
     <label>Price per drop (USD)<input name="dropPrice" type="number" min="0" step="0.5" value="${s.dropPrice}"></label>
     <label>Claim code valid (hours)<input name="claimHours" type="number" min="1" max="168" value="${s.claimHours}"></label>
+    <label>Explorer must be within (metres) to claim<input name="claimRadius" type="number" min="5" max="5000" value="${s.claimRadius}"></label>
+    <p class="note" style="grid-column:1/-1">Phone GPS is usually accurate to about 5–20 m, and less inside buildings. A very small distance can stop explorers who are standing at the door.</p>
     <button class="sbtn gold">Save</button></form></div>`;
-  $('#sf', el).onsubmit = async (e) => { e.preventDefault(); const f = Object.fromEntries([...new FormData(e.target)].map(([k, v]) => [k, Number(v)])); try { await api('/api/admin/settings', { method: 'PUT', body: f }); Object.assign(S.settings, { creditsPerFind: f.creditsPerFind, rafflePrize: f.rafflePrize, dropPrice: f.dropPrice }); hqToast('Settings saved'); } catch (err) { hqToast(err.message); } };
+  $('#sf', el).onsubmit = async (e) => { e.preventDefault(); const f = Object.fromEntries([...new FormData(e.target)].map(([k, v]) => [k, Number(v)])); try { await api('/api/admin/settings', { method: 'PUT', body: f }); Object.assign(S.settings, { creditsPerFind: f.creditsPerFind, rafflePrize: f.rafflePrize, dropPrice: f.dropPrice, claimRadius: f.claimRadius }); hqToast('Settings saved'); } catch (err) { hqToast(err.message); } };
 };
 
 boot().catch((e) => { document.body.innerHTML = `<p class="empty" style="padding:40px">${esc(e.message)}</p>`; });

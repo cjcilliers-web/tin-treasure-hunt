@@ -66,6 +66,7 @@ export async function getSettings(db) {
     rafflePrize: Number(s.raffle_prize_credits ?? 500),
     dropPrice: Number(s.drop_price_usd ?? 1),
     claimHours: Number(s.claim_hours ?? 24),
+    claimRadius: Number(s.claim_radius_m ?? 10),
   };
 }
 

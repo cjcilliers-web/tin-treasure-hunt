@@ -48,10 +48,17 @@ const ok = (cond, msg) => { if (!cond) { errors.push(msg); console.log('FAIL', m
   ok(true, `Polly tip shows: ${(await T.locator('#tip').innerText()).split('\n')[0].slice(0, 70)}`);
 
   // Detail -> claim -> QR
-  await T.click('.drop >> nth=0');
+  await T.click('.drop:has-text("The Lighthouse Taco")');
   await T.waitForSelector('#claim');
   const title = await T.locator('.hero h2').innerText();
   await T.screenshot({ path: `${OUT}/03-detail.png` });
+  ok(await T.locator('#claim').isDisabled(), `claim blocked when far away: ${(await T.locator('#gate').innerText()).trim()}`);
+  const far = await T.evaluate(async () => { const id = (await fetch('/api/drops?destination=cozumel&radius=5000').then((r) => r.json())).drops[0].id; return fetch(`/api/drops/${id}/claim`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ lat: 20.40, lng: -86.90 }) }).then((r) => r.status); });
+  ok(far === 403, 'server refuses a claim from far away');
+  const spot = await T.evaluate(async (t) => (await fetch('/api/drops?destination=cozumel&radius=5000').then((r) => r.json())).drops.find((d) => d.title === t), title);
+  await T.context().setGeolocation({ latitude: spot.lat + 0.00003, longitude: spot.lng }); // ~3 m away
+  await T.waitForSelector('#claim:not([disabled])', { timeout: 15000 });
+  ok(true, `claim unlocked at the treasure: ${(await T.locator('#gate').innerText()).trim()}`);
   await T.click('#claim');
   await T.waitForSelector('.qrcard .code');
   const code = (await T.locator('.qrcard .code').innerText()).trim();

@@ -223,3 +223,6 @@ video.scan{width:100%;border-radius:12px;background:#000;aspect-ratio:1;object-f
   .viewsw .modes{padding:3px}.viewsw .modes button{padding:5px 12px;font-size:.85rem}
   .stage.app:has(#viewsw:not([hidden])) .phone{height:calc(100dvh - 47px)}
 }
+.gate{font-size:.85rem;color:var(--muted);background:var(--panel);border:1px dashed var(--line);border-radius:10px;padding:9px 11px}
+.gate b{color:var(--gold-hi)}
+.btn:disabled{opacity:.45;cursor:not-allowed}

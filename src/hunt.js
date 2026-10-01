@@ -57,7 +57,7 @@ export async function getDestination(req, env, id) {
   const d = await destinationOr404(env, id);
   const hunt = await env.DB.prepare(`SELECT id, name, emoji, tagline, starts_on, ends_on FROM hunts WHERE destination_id = ? AND status = 'live' ORDER BY id LIMIT 1`).bind(d.id).first();
   const s = await getSettings(env.DB);
-  return json({ destination: { id: d.id, name: d.name, country: d.country, lat: d.center_lat, lng: d.center_lng, status: d.status }, hunt, settings: { creditsPerFind: s.creditsPerFind, rafflePrize: s.rafflePrize }, nextRaffleAt: iso(nextRaffleAt()) });
+  return json({ destination: { id: d.id, name: d.name, country: d.country, lat: d.center_lat, lng: d.center_lng, status: d.status }, hunt, settings: { creditsPerFind: s.creditsPerFind, rafflePrize: s.rafflePrize, claimRadius: s.claimRadius }, nextRaffleAt: iso(nextRaffleAt()) });
 }
 
 export async function listDrops(req, env, user) {
@@ -107,9 +107,16 @@ export async function claimDrop(req, env, user, id) {
   requireRole(user);
   const s = await getSettings(env.DB);
   const drop = await env.DB.prepare(
-    `SELECT d.id, d.item FROM treasure_drops d JOIN merchants m ON m.id = d.merchant_id
+    `SELECT d.id, d.item, d.gps_lat, d.gps_lng FROM treasure_drops d JOIN merchants m ON m.id = d.merchant_id
       WHERE d.id = ? AND d.status = 'active' AND m.status = 'active'`).bind(id).first();
   if (!drop) bad('This treasure is no longer available', 404);
+  // Proof of presence: the explorer must be standing within the HQ-set radius.
+  const b = await body(req, 2_000);
+  const lat = Number(b.lat), lng = Number(b.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180)
+    bad('Turn on location so we can see you are at the treasure.', 428);
+  const away = distanceM(lat, lng, drop.gps_lat, drop.gps_lng);
+  if (away > s.claimRadius) bad(`You're ${away < 1000 ? `${away} m` : `${(away / 1000).toFixed(1)} km`} away. Get within ${s.claimRadius} m of the treasure to claim it.`, 403);
   const existing = await env.DB.prepare(`SELECT code, status, expires_at FROM claims WHERE user_id = ? AND drop_id = ? AND status IN ('claimed','redeemed')`).bind(user.id, id).first();
   if (existing) {
     if (existing.status === 'redeemed') bad('You already found this treasure', 409);
@@ -121,8 +128,8 @@ export async function claimDrop(req, env, user, id) {
   for (let i = 0; i < 5; i++) {
     const code = randomCode(6);
     try {
-      const claim = await env.DB.prepare(`INSERT INTO claims(user_id, drop_id, code, expires_at) VALUES (?,?,?,?) RETURNING code, status, expires_at`)
-        .bind(user.id, id, code, addHours(s.claimHours)).first();
+      const claim = await env.DB.prepare(`INSERT INTO claims(user_id, drop_id, code, expires_at, claim_lat, claim_lng, claim_distance_m) VALUES (?,?,?,?,?,?,?) RETURNING code, status, expires_at`)
+        .bind(user.id, id, code, addHours(s.claimHours), lat, lng, away).first();
       return json({ claim, item: drop.item }, 201);
     } catch (e) {
       if (!String(e.message).includes('UNIQUE')) { await releaseUnit(env, id); throw e; }
@@ -549,6 +556,7 @@ export async function adminSettings(req, env, user) {
       rafflePrize: ['raffle_prize_credits', { min: 0, max: 100000, int: true }],
       dropPrice: ['drop_price_usd', { min: 0, max: 1000 }],
       claimHours: ['claim_hours', { min: 1, max: 168, int: true }],
+      claimRadius: ['claim_radius_m', { min: 5, max: 5000, int: true }],
     };
     const stmts = Object.entries(map).filter(([k]) => b[k] !== undefined)
       .map(([k, [key, opt]]) => env.DB.prepare('INSERT INTO settings(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').bind(key, String(num(b[k], { ...opt, name: k }))));
