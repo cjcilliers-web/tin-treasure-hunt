@@ -226,3 +226,35 @@ video.scan{width:100%;border-radius:12px;background:#000;aspect-ratio:1;object-f
 .gate{font-size:.85rem;color:var(--muted);background:var(--panel);border:1px dashed var(--line);border-radius:10px;padding:9px 11px}
 .gate b{color:var(--gold-hi)}
 .btn:disabled{opacity:.45;cursor:not-allowed}
+
+/* TIN Coupon-style treasure */
+.coupon{background:#fbf6e7;color:#1a1405;border-radius:18px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.35);display:grid}
+.cp-head{display:flex;gap:10px;align-items:center;padding:12px 14px;background:#fff;border-bottom:1px solid #eadfbf}
+.cp-logo{width:42px;height:42px;border-radius:50%;object-fit:cover;flex:none;border:2px solid var(--gold);background:#fff}
+.cp-mono{display:grid;place-items:center;background:#1a1405;color:var(--gold-hi);font:600 .9rem var(--f-mono)}
+.cp-who{display:grid;min-width:0;flex:1}.cp-who b{font-size:.95rem;line-height:1.2}.cp-who small{color:#6b6250;font-size:.75rem}
+.cp-status{font:600 .66rem var(--f-mono);letter-spacing:.05em;text-transform:uppercase;padding:4px 8px;border-radius:999px;white-space:nowrap}
+.s-available{background:#e3f4e8;color:#1f6b3a}.s-claimed{background:#fff1d6;color:#8a5a00}.s-redeemed{background:#e6e3f7;color:#3b318f}.s-expired{background:#f3e3e0;color:#8f3a2c}
+.cp-gallery{position:relative;overflow:hidden;aspect-ratio:16/10;background:#1a2b20}
+.cp-track{display:flex;height:100%;transition:transform .3s ease}
+.cp-track>*{flex:0 0 100%;width:100%;height:100%;object-fit:cover}
+.cp-art{display:grid;place-items:center;align-content:center;gap:4px;background:radial-gradient(circle at 30% 30%,#2e4a3a,#0f2421);color:var(--gold-hi)}
+.cp-art span{font-size:3.4rem}.cp-art small{font:600 .7rem var(--f-mono);letter-spacing:.12em;text-transform:uppercase;color:#cfe3d8}
+.cp-nav{position:absolute;top:50%;transform:translateY(-50%);width:34px;height:34px;border-radius:50%;border:0;background:rgba(0,0,0,.55);color:#fff;font-size:1.4rem;line-height:1;cursor:pointer}
+.cp-nav.prev{left:8px}.cp-nav.next{right:8px}
+.cp-dots{position:absolute;bottom:8px;left:0;right:0;display:flex;gap:5px;justify-content:center}.cp-dots i{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.5)}.cp-dots i.on{background:#fff}
+.cp-body{padding:12px 14px;display:grid;gap:6px}
+.cp-title{font-family:var(--f-display);font-size:1.25rem;line-height:1.2}
+.cp-reward{font-weight:700;font-size:1.05rem;color:#7a4e00}
+.cp-value{font:600 .8rem var(--f-mono);color:#6b6250}.cp-value b{color:#1f6b3a}
+.coupon .clue{color:#4d4533;border-left-color:var(--gold);margin:2px 0}
+.cp-terms{font-size:.82rem;color:#4d4533}.cp-terms summary{cursor:pointer;font-weight:600;color:#1a1405}.cp-terms ul{margin:6px 0 0;padding-left:18px;display:grid;gap:3px}
+.cp-stub{display:grid;justify-items:center;gap:6px;padding:16px 14px 18px;border-top:2px dashed #d8c99c;position:relative;text-align:center}
+.cp-stub::before,.cp-stub::after{content:"";position:absolute;top:-11px;width:20px;height:20px;border-radius:50%;background:var(--deep)}
+.cp-stub::before{left:-10px}.cp-stub::after{right:-10px}
+.cp-qr svg{width:170px;height:170px;display:block}
+.cp-code{font:600 1.5rem var(--f-mono);letter-spacing:.12em}
+.cp-stub small{color:#6b6250}
+.photos{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.photos figure{margin:0;position:relative}.photos img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;display:block}
+.photos button{position:absolute;top:3px;right:3px;width:22px;height:22px;border-radius:50%;border:0;background:rgba(0,0,0,.65);color:#fff;font-size:.7rem;cursor:pointer}

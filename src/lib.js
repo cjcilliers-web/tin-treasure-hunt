@@ -58,6 +58,15 @@ export function randomCode(len = 6) {
   return Array.from(b, (x) => CODE_CHARS[x % CODE_CHARS.length]).join('');
 }
 
+// TIN Coupon style backup code: 8 digits, never starting with 0.
+export function couponCode() {
+  const b = crypto.getRandomValues(new Uint32Array(1))[0];
+  return String(10_000_000 + (b % 90_000_000));
+}
+
+// Accepts "TIN-TH:12345678", "1234 5678", "1234-5678" or legacy 6-letter codes.
+export const normalizeCode = (raw) => String(raw || '').trim().toUpperCase().replace(/^TIN-TH:/, '').replace(/[\s-]/g, '');
+
 export async function getSettings(db) {
   const { results } = await db.prepare('SELECT key, value FROM settings').all();
   const s = Object.fromEntries(results.map((r) => [r.key, r.value]));

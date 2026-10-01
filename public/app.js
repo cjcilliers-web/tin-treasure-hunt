@@ -230,29 +230,87 @@ VIEWS.map = async (el) => {
   setTimeout(() => leafletMap && leafletMap.invalidateSize(), 50);
 };
 
+/* ---------- TIN Coupon-style treasure card ---------- */
+const fmtCode = (c) => (/^\d{8}$/.test(c) ? `${c.slice(0, 4)} ${c.slice(4)}` : c);
+const initials = (n) => String(n || '?').replace(/[^A-Za-zÀ-ÿ0-9 ]/g, ' ').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+function couponStatus(d, claim) {
+  if (claim?.status === 'redeemed') return ['redeemed', 'Redeemed ✓'];
+  if (claim?.status === 'claimed') return Date.parse(claim.expires_at) < Date.now() ? ['expired', 'Expired'] : ['claimed', 'Claimed'];
+  if (!d.remaining) return ['expired', 'All found'];
+  return ['available', 'Available'];
+}
+function couponHtml(d, claim, { stub = false } = {}) {
+  const [sk, sl] = couponStatus(d, claim);
+  const n = Math.max(d.photoCount || 0, 0);
+  const slides = n
+    ? Array.from({ length: n }, (_, i) => `<img src="/api/drops/${d.id}/photos/${i}" alt="${esc(d.title)} photo ${i + 1}" loading="lazy">`).join('')
+    : `<div class="cp-art"><span>${esc(d.emoji)}</span><small>${esc(d.category)}</small></div>`;
+  const limit = S.settings.claimRadius ?? 10;
+  const terms = [
+    'Completely free. No purchase needed.',
+    'One per explorer. Single use.',
+    `Claim it while standing at the treasure (within ${limit} m).`,
+    `Show the QR or 8-digit code to staff within ${S.settings.claimHours ?? 24} hours of claiming.`,
+    `Earn ${S.settings.creditsPerFind} Treasure Hunt credits when ${d.merchant} confirms.`,
+    ...(d.terms ? [d.terms] : []),
+  ];
+  return `<article class="coupon" aria-label="Treasure coupon from ${esc(d.merchant)}">
+    <header class="cp-head">
+      ${d.hasLogo ? `<img class="cp-logo" src="/api/merchants/${d.merchantId}/logo" alt="${esc(d.merchant)} logo">` : `<span class="cp-logo cp-mono" aria-hidden="true">${esc(initials(d.merchant))}</span>`}
+      <div class="cp-who"><b>${esc(d.merchant)}</b><small>${esc(d.category)} · ${fmtD(d.distanceM)} away</small></div>
+      <span class="cp-status s-${sk}">${sl}</span>
+    </header>
+    <div class="cp-gallery" data-n="${n || 1}">
+      <div class="cp-track">${slides}</div>
+      ${n > 1 ? `<button class="cp-nav prev" aria-label="Previous photo">‹</button><button class="cp-nav next" aria-label="Next photo">›</button>
+      <div class="cp-dots">${Array.from({ length: n }, (_, i) => `<i class="${i ? '' : 'on'}"></i>`).join('')}</div>` : ''}
+    </div>
+    <div class="cp-body">
+      <div class="cp-title">${esc(d.emoji)} ${esc(d.title)}</div>
+      <div class="cp-reward">${d.item ? esc(d.item) : '🎁 Mystery reward, revealed when you claim'}</div>
+      <div class="cp-value">${d.value ? `Value $${Number(d.value).toFixed(0)} · ` : ''}<b>FREE</b> · ${esc(d.difficulty)}</div>
+      <p class="clue">${esc(d.story)}</p>
+      <details class="cp-terms"><summary>Terms &amp; how to redeem</summary><ul>${terms.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></details>
+    </div>
+    ${stub && claim ? `<div class="cp-stub">
+      <div id="qr" class="cp-qr" aria-label="Redemption QR code"></div>
+      <div class="cp-code" aria-label="Backup code">${esc(fmtCode(claim.code))}</div>
+      <small>Backup code · saved to your wallet<br>Valid until ${new Date(claim.expires_at).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</small>
+    </div>` : ''}
+  </article>`;
+}
+function wireGallery(root) {
+  const g = $('.cp-gallery', root); if (!g) return;
+  const track = $('.cp-track', g), n = Number(g.dataset.n); let i = 0;
+  const show = (k) => { i = (k + n) % n; track.style.transform = `translateX(-${i * 100}%)`; $$('.cp-dots i', g).forEach((d, j) => d.classList.toggle('on', j === i)); };
+  const p = $('.prev', g), nx = $('.next', g);
+  if (p) p.onclick = () => show(i - 1);
+  if (nx) nx.onclick = () => show(i + 1);
+  let x0 = null;
+  g.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; }, { passive: true });
+  g.addEventListener('touchend', (e) => { if (x0 == null || n < 2) return; const dx = e.changedTouches[0].clientX - x0; if (Math.abs(dx) > 40) show(i + (dx < 0 ? 1 : -1)); x0 = null; });
+}
+function drawQr(root, code) {
+  try { const qr = qrcode(0, 'M'); qr.addData(`TIN-TH:${code}`); qr.make(); $('#qr', root).innerHTML = qr.createSvgTag({ cellSize: 5, margin: 2, scalable: true }); } catch {}
+}
+
 VIEWS.detail = async (el, id) => {
   const { drop: d, claim } = await api(`/api/drops/${id}?x=1${hereQs()}`);
   const dirUrl = `https://www.google.com/maps/dir/?api=1&destination=${d.lat},${d.lng}&travelmode=walking`;
   el.innerHTML = `<button class="back" id="bk">← Back to treasures</button>
-  ${d.hasPhoto ? `<img class="dimg" src="/api/drops/${d.id}/photo" alt="">` : ''}
-  <div class="hero"><span class="big">${esc(d.emoji)}</span><h2>${esc(d.title)}</h2>
-    <div class="note">${esc(d.merchant)} · ${esc(d.category)}</div>
-    <div class="clue">${esc(d.story)}</div>
-    <div><b>${d.item ? esc(d.item) : '🎁 Mystery reward, revealed when you claim'}</b></div></div>
+  ${couponHtml(d, claim)}
   <div class="facts">
-    <div class="fact"><div class="k">Distance</div><div class="v">${fmtD(d.distanceM)} · ${d.walkMin} min</div></div>
-    <div class="fact"><div class="k">Difficulty</div><div class="v">${esc(d.difficulty)}</div></div>
+    <div class="fact"><div class="k">Walk</div><div class="v">${fmtD(d.distanceM)} · ${d.walkMin} min</div></div>
     <div class="fact"><div class="k">Rating</div><div class="v">${d.rating ? `★ ${Number(d.rating).toFixed(1)} (${d.ratingCount})` : 'New'}</div></div>
     <div class="fact"><div class="k">Hours</div><div class="v">${esc(d.hours || '—')}</div></div>
     <div class="fact"><div class="k">Left</div><div class="v">${d.remaining}</div></div>
-    <div class="fact"><div class="k">You earn</div><div class="v">🪙 ${S.settings.creditsPerFind}</div></div>
   </div>
   ${d.walkingNote ? `<p class="note">🚶 ${esc(d.walkingNote)}</p>` : ''}
   ${claim?.status === 'redeemed' ? `<p class="empty">You found this treasure ✓</p>` :
-    claim ? `<button class="btn" id="showqr">Show my code</button>` :
+    claim ? `<button class="btn" id="showqr">Show my coupon code</button>` :
     `<div class="gate" id="gate"></div><button class="btn" id="claim">Claim this treasure</button>`}
-  <a class="btn ghost" href="${dirUrl}" target="_blank" rel="noopener">Walking directions</a>
-  <p class="note">Credits are added only after ${esc(d.merchant)} confirms your visit.</p>`;
+  <a class="btn ghost" href="${dirUrl}" target="_blank" rel="noopener">Walking directions</a>`;
+  wireGallery(el);
   $('#bk', el).onclick = () => go('hunt');
   const c = $('#claim', el);
   if (c) {
@@ -261,7 +319,7 @@ VIEWS.detail = async (el, id) => {
     c.onclick = async () => {
       if (!S.gate()) return;
       c.disabled = true; c.textContent = 'Claiming…';
-      try { await api(`/api/drops/${d.id}/claim`, { method: 'POST', body: { lat: S.here.lat, lng: S.here.lng } }); toast('Treasure claimed! Show your code at the counter.'); go('qr', d.id); }
+      try { await api(`/api/drops/${d.id}/claim`, { method: 'POST', body: { lat: S.here.lat, lng: S.here.lng } }); toast('Treasure claimed! Your coupon is in your wallet.'); go('qr', d.id); }
       catch (e) { toast(e.message); c.disabled = false; c.textContent = 'Claim this treasure'; S.gate(); }
     };
   }
@@ -289,13 +347,12 @@ VIEWS.qr = async (el, id) => {
   const { drop: d, claim } = await api(`/api/drops/${id}`);
   if (!claim) return go('detail', id);
   if (claim.status === 'redeemed') return go('rate', id);
-  el.innerHTML = `<button class="back" id="bk">← ${esc(d.title)}</button>
-  <div class="qrcard"><strong>${esc(d.item)}</strong><div id="qr"></div><div class="code">${esc(claim.code)}</div>
-    <small>Show this at ${esc(d.merchant)}. Valid until ${new Date(claim.expires_at).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}.</small></div>
-  <div class="status"><span class="p"></span>Waiting for ${esc(d.merchant)} to confirm…</div>
+  el.innerHTML = `<button class="back" id="bk">← My codes</button>
+  ${couponHtml(d, claim, { stub: true })}
+  <div class="status"><span class="p"></span>Show this to ${esc(d.merchant)} staff. Waiting for them to confirm…</div>
   <button class="back" id="cancel" style="text-align:center">Cancel this claim</button>`;
-  try { const qr = qrcode(0, 'M'); qr.addData(`TIN-TH:${claim.code}`); qr.make(); $('#qr', el).innerHTML = qr.createSvgTag({ cellSize: 5, margin: 2, scalable: true }); } catch {}
-  $('#bk', el).onclick = () => go('detail', id);
+  wireGallery(el); drawQr(el, claim.code);
+  $('#bk', el).onclick = () => go('claims');
   $('#cancel', el).onclick = async () => { if (!confirm('Cancel this claim? The treasure goes back for other explorers.')) return; try { await api(`/api/drops/${id}/claim`, { method: 'DELETE' }); toast('Claim cancelled'); go('hunt'); } catch (e) { toast(e.message); } };
   S.poll = setInterval(async () => {
     try { const r = await api(`/api/drops/${id}`); if (r.claim?.status === 'redeemed') { clearInterval(S.poll); S.poll = null; celebrate(r.claim.credits_awarded, () => go('rate', id)); refreshCredits(); } } catch {}
@@ -334,7 +391,7 @@ VIEWS.claims = async (el) => {
   const open = claims.filter((c) => c.status === 'claimed'), done = claims.filter((c) => c.status === 'redeemed');
   const row = (c) => `<button class="drop ${c.status === 'redeemed' ? 'done' : ''}" data-d="${c.drop_id}" data-s="${c.status}" data-r="${c.redemption_id && !c.overall_score ? 1 : 0}">
     <span class="chest">${esc(c.emoji)}</span><span><div class="n">${esc(c.title)}</div><div class="m">${esc(c.item)} · ${esc(c.merchant)}</div></span>
-    <span class="d">${c.status === 'redeemed' ? `+${c.credits_awarded}<small>${c.overall_score ? `★ ${c.overall_score}` : 'Rate it'}</small>` : `${esc(c.code)}<small>Show code</small>`}</span></button>`;
+    <span class="d">${c.status === 'redeemed' ? `+${c.credits_awarded}<small>${c.overall_score ? `★ ${c.overall_score}` : 'Rate it'}</small>` : `${esc(fmtCode(c.code))}<small>Show coupon</small>`}</span></button>`;
   el.innerHTML = `<h3 style="margin:0;font-family:var(--f-display);font-weight:400">My codes</h3>
     ${open.length ? open.map(row).join('') : '<p class="empty">No open codes. Claim a treasure to get one.</p>'}
     ${done.length ? `<h3 style="margin:8px 0 0;font-family:var(--f-display);font-weight:400">Treasures found</h3>${done.map(row).join('')}` : ''}`;
@@ -451,10 +508,10 @@ VIEWS.mScan = async (el) => {
   if (!(await merchantGuard(el))) return;
   const st = await api(`/api/merchant/stats${mq()}`);
   el.innerHTML = `<div class="merch"><h3>Redeem a treasure</h3>
-    <p class="note">Scan the explorer's QR code, or type the 6-letter code.</p>
+    <p class="note">Scan the explorer's QR code, or type the 8-digit code from their coupon.</p>
     <button class="btn sea" id="cam">📷 Scan QR code</button>
     <div id="camwrap" hidden><video class="scan" id="vid" playsinline muted></video><button class="back" id="camx" style="text-align:center">Stop camera</button></div>
-    <form id="cf" style="display:grid;gap:8px"><input id="code" maxlength="12" placeholder="ABC123" autocomplete="off" aria-label="Redemption code"><button class="btn">Check code</button></form>
+    <form id="cf" style="display:grid;gap:8px"><input id="code" maxlength="14" placeholder="1234 5678" inputmode="numeric" autocomplete="off" aria-label="Redemption code"><button class="btn">Check code</button></form>
     <div class="err" id="er"></div></div>
   <div class="kp"><div><b>${st.today}</b><span>Redeemed today</span></div><div><b>${st.waiting}</b><span>Explorers with open codes</span></div></div>
   ${S.me.role === 'admin' ? '<button class="back" id="swm">Switch merchant</button>' : ''}`;
@@ -485,7 +542,7 @@ async function startCamera() {
 }
 
 async function checkCode(raw) {
-  const code = String(raw).trim().toUpperCase().replace(/^TIN-TH:/, '');
+  const code = String(raw).trim().toUpperCase().replace(/^TIN-TH:/, '').replace(/[\s-]/g, '');
   $('#er') && ($('#er').textContent = '');
   if (code.length < 4) return;
   try { const { claim } = await api(`/api/merchant/lookup${mq()}`, { method: 'POST', body: { code } }); proof(claim); }
@@ -497,7 +554,7 @@ function proof(c) {
   const b = document.createElement('div');
   b.className = 'burst'; Object.assign(b.style, { alignItems: 'start', overflowY: 'auto', background: 'rgba(7,16,15,.97)' });
   b.innerHTML = `<div style="display:grid;gap:10px;width:100%;text-align:left"><strong style="font-size:1.05rem">${esc(c.emoji)} ${esc(c.item)}</strong>
-    <span class="note">Code ${esc(c.code)} is valid for ${esc(c.traveler)}. Hand over the treasure, then add proof.</span>
+    <span class="note">Code ${esc(fmtCode(c.code))} is valid for ${esc(c.traveler)}. Hand over the treasure, then add proof.</span>
     <div class="seg"><button data-t="signature" aria-pressed="true">✍️ Signature</button><button data-t="photo" aria-pressed="false">📷 Photo</button></div>
     <div id="pz"></div><div class="err" id="per"></div>
     <button class="btn sea" id="fin">Confirm redemption</button><button class="back" id="cx">Cancel</button></div>`;
@@ -547,13 +604,18 @@ VIEWS.mList = async (el) => {
   if (!(await merchantGuard(el))) return;
   const { drops } = await api(`/api/merchant/drops${mq()}`);
   const pill = (s) => `<span class="pill ${s === 'active' ? 'live' : s}">${s === 'active' ? 'live' : s}</span>`;
-  el.innerHTML = `<button class="btn" id="nd">＋ Create a new treasure</button>
+  el.innerHTML = `<div class="card" style="gap:10px"><div style="display:flex;gap:12px;align-items:center">
+      ${S.merchant.has_logo ? `<img class="cp-logo" src="/api/merchants/${S.merchant.id}/logo?v=${Date.now()}" alt="Your logo">` : `<span class="cp-logo cp-mono">${esc(initials(S.merchant.name))}</span>`}
+      <div><b>${esc(S.merchant.name)}</b><div class="note">Your logo appears on every treasure coupon.</div></div></div>
+      <label class="sbtn" style="justify-self:start;cursor:pointer">${S.merchant.has_logo ? 'Change logo' : 'Upload logo'}<input type="file" accept="image/*" hidden id="lg"></label></div>
+  <button class="btn" id="nd">＋ Create a new treasure</button>
   ${drops.length ? drops.map((d) => `<div class="card" style="gap:8px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b>${esc(d.emoji)} ${esc(d.title)}</b>${pill(d.status)}</div>
     <div class="note">${esc(d.item)} · ${d.remaining}/${d.quantity} left · ${d.redeemed} redeemed · ${d.waiting} waiting</div>
     ${d.paymentStatus === 'unpaid' ? `<div class="note" style="color:var(--warn)">💳 $${d.fee} to pay before TIN HQ can approve</div>` : d.paymentStatus === 'paid' ? '<div class="note" style="color:var(--ok)">💳 Paid</div>' : ''}
     <div class="row">${d.paymentStatus === 'unpaid' ? `<button class="sbtn gold" data-pay="${d.id}">Pay $${d.fee}</button>` : ''}${d.status === 'active' ? `<button class="sbtn stop" data-p="${d.id}">Pause</button>` : d.status === 'paused' ? `<button class="sbtn go" data-r="${d.id}">Resume</button>` : ''}<button class="sbtn" data-e="${d.id}">Edit</button></div></div>`).join('')
     : '<p class="empty">No treasures yet. Create your first adventure!</p>'}`;
   $('#nd', el).onclick = () => go('mNew');
+  $('#lg', el).onchange = async (e) => { const f = e.target.files[0]; if (!f) return; try { const logo = await shrink(f, 300, 0.85); await api(`/api/merchant/me${mq()}`, { method: 'PATCH', body: { logo } }); S.merchant = null; toast('Logo saved'); render(); } catch (err) { toast(err.message); } };
   const patch = async (id, body) => { try { await api(`/api/merchant/drops/${id}${mq()}`, { method: 'PATCH', body }); render(); } catch (e) { toast(e.message); } };
   $$('[data-p]', el).forEach((b) => (b.onclick = () => patch(b.dataset.p, { status: 'paused' })));
   $$('[data-r]', el).forEach((b) => (b.onclick = () => patch(b.dataset.r, { status: 'active' })));
@@ -579,22 +641,41 @@ function dropForm(el, d) {
     <div class="two"><label style="flex-direction:row;display:flex;gap:6px;align-items:center"><input type="checkbox" id="kd" style="width:auto" ${d?.kids === false ? '' : 'checked'}> Kid-friendly</label>
       <label style="flex-direction:row;display:flex;gap:6px;align-items:center"><input type="checkbox" id="my" style="width:auto" ${d?.mystery ? 'checked' : ''}> Mystery reward</label></div>
     <label style="flex-direction:row;display:flex;gap:6px;align-items:center"><input type="checkbox" id="gl" style="width:auto"> Treasure is where I'm standing now (otherwise at the business)</label>
-    <label class="photo" id="ph">${d?.hasPhoto ? `<img src="/api/drops/${d.id}/photo" alt="">` : '📷 Add a photo of the treasure (optional)'}<input type="file" accept="image/*" hidden id="pf"></label>
+    <label>Your terms (optional)<textarea id="tm" maxlength="500" placeholder="e.g. Dine-in only. Not valid on public holidays.">${esc(d?.terms || '')}</textarea></label>
+    <div class="photos" id="phs"></div>
+    <label class="sbtn" style="justify-self:start;cursor:pointer">📷 Add photos (up to 4)<input type="file" accept="image/*" multiple hidden id="pf"></label>
     ${edit ? '<p class="note">Changes to the name, reward, story or photo go back to TIN HQ for a quick review.</p>' : `<div class="sum"><span>Total to pay</span><b id="tot">$${10 * price}</b></div>`}
     <div class="err" id="er"></div>
     <button class="btn" type="submit">${edit ? 'Save changes' : 'Pay & send for approval'}</button>
     ${edit ? '' : S.payments === 'stripe' ? '<p class="note">🔒 Secure payment by Stripe. Card, and OXXO where available.</p>' : '<p class="note">TIN will send you an invoice for the drop fee.</p>'}
   </form>`;
-  let photo;
+  // Gallery photos: start from the treasure's current photos when editing.
+  let photos = null, current = d?.photoCount || 0;
+  const drawPhotos = () => {
+    const box = $('#phs'); if (!box) return;
+    const list = photos ? photos : Array.from({ length: current }, (_, i) => `/api/drops/${d.id}/photos/${i}`);
+    box.innerHTML = list.length ? list.map((src, i) => `<figure><img src="${src}" alt="Photo ${i + 1}"><button type="button" data-rm="${i}" aria-label="Remove photo ${i + 1}">✕</button></figure>`).join('') : '<p class="note">No photos yet. Treasures with photos get found more.</p>';
+    $$('[data-rm]', box).forEach((b) => (b.onclick = async () => {
+      if (!photos) photos = await Promise.all(list.map((u) => (u.startsWith('data:') ? u : fetch(u).then((r) => r.blob()).then((bl) => shrink(bl, 800, 0.7)))));
+      photos.splice(Number(b.dataset.rm), 1); drawPhotos();
+    }));
+  };
   $('#bk', el).onclick = () => go('mList');
   const qt = $('#qt', el); if (qt) qt.oninput = () => { $('#tot').textContent = `$${(Number(qt.value) || 0) * price}`; };
-  $('#pf', el).onchange = async (e) => { const f = e.target.files[0]; if (!f) return; photo = await shrink(f, 640, 0.72); $('#ph').firstChild.replaceWith(Object.assign(document.createElement('img'), { src: photo, alt: '' })); const old = $('#ph').childNodes; if (old[0].nodeType === 3) old[0].remove(); };
+  drawPhotos();
+  $('#pf', el).onchange = async (e) => {
+    const files = [...e.target.files]; if (!files.length) return;
+    if (!photos) photos = current ? await Promise.all(Array.from({ length: current }, (_, i) => fetch(`/api/drops/${d.id}/photos/${i}`).then((r) => r.blob()).then((bl) => shrink(bl, 800, 0.7)))) : [];
+    for (const f of files) { if (photos.length >= 4) { toast('Up to 4 photos'); break; } photos.push(await shrink(f, 800, 0.7)); }
+    e.target.value = ''; drawPhotos();
+  };
   $('#f', el).onsubmit = async (e) => {
     e.preventDefault();
     const body = { title: $('#tn').value, item: $('#it').value, story: $('#cl').value, category: $('#ct').value, emoji: $('#em').value, difficulty: $('#df').value, value: Number($('#vl').value || 0), walkingNote: $('#wd').value, kids: $('#kd').checked, mystery: $('#my').checked };
     if (!edit) body.quantity = Number($('#qt').value);
     if ($('#gl').checked) { if (S.locSource !== 'gps') return ($('#er').textContent = 'Turn on location to place the treasure where you are.'); body.lat = S.here.lat; body.lng = S.here.lng; }
-    if (photo) body.photo = photo;
+    if (photos) body.photos = photos;
+    body.terms = $('#tm').value;
     const btn = $('button[type=submit]', el); btn.disabled = true;
     try {
       if (edit) { const r = await api(`/api/merchant/drops/${d.id}${mq()}`, { method: 'PATCH', body }); toast(r.status === 'pending' ? 'Saved. Sent to TIN HQ for review.' : 'Saved'); }

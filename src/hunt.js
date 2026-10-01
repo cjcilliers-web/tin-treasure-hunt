@@ -1,6 +1,6 @@
 // Phase 2 — core Treasure Hunt: discovery, claims, redemption, credits, ratings.
 import {
-  bad, body, json, str, num, oneOf, nowIso, addHours, distanceM, walkMin, randomCode,
+  bad, body, json, str, num, oneOf, nowIso, addHours, distanceM, walkMin, couponCode, normalizeCode,
   getSettings, CATEGORIES, DIFFICULTIES, nextRaffleAt, lastRaffleAt, iso,
 } from './lib.js';
 import { requireRole } from './auth.js';
@@ -10,7 +10,7 @@ import { stripeEnabled, startCheckout } from './payments.js';
 
 const DROP_COLS = `
   d.id, d.title, d.item, d.category, d.emoji, d.story_text, d.gps_lat, d.gps_lng, d.walking_distance,
-  d.difficulty, d.reward_value_usd, d.is_mystery, d.kid_friendly, d.quantity, d.remaining, d.photo IS NOT NULL AS has_photo,
+  d.difficulty, d.reward_value_usd, d.is_mystery, d.kid_friendly, d.quantity, d.remaining, (SELECT COUNT(*) FROM drop_photos p WHERE p.drop_id = d.id) AS photo_count, d.terms, m.logo IS NOT NULL AS has_logo,
   d.status, d.created_at, d.destination_id, d.merchant_id, d.payment_status, d.fee_usd,
   m.name AS merchant, m.hours, m.category AS merchant_category, m.address,
   (SELECT ROUND(AVG(r.overall_score), 1) FROM redemption_ratings r JOIN redemptions x ON x.id = r.redemption_id WHERE x.merchant_id = m.id) AS rating,
@@ -23,7 +23,7 @@ export function shapeDrop(r, here, { revealMystery = false } = {}) {
     item: r.is_mystery && !revealMystery ? null : r.item, mystery: !!r.is_mystery,
     lat: r.gps_lat, lng: r.gps_lng, walkingNote: r.walking_distance, difficulty: r.difficulty,
     value: r.reward_value_usd, kids: !!r.kid_friendly, remaining: r.remaining, quantity: r.quantity,
-    hasPhoto: !!r.has_photo, status: r.status, paymentStatus: r.payment_status, fee: r.fee_usd, merchant: r.merchant, merchantId: r.merchant_id,
+    hasPhoto: r.photo_count > 0, photoCount: r.photo_count, hasLogo: !!r.has_logo, terms: r.terms, status: r.status, paymentStatus: r.payment_status, fee: r.fee_usd, merchant: r.merchant, merchantId: r.merchant_id,
     hours: r.hours, rating: r.rating, ratingCount: r.rating_count, destination: r.destination_id,
     distanceM: m, walkMin: m == null ? null : walkMin(m),
   };
@@ -57,7 +57,7 @@ export async function getDestination(req, env, id) {
   const d = await destinationOr404(env, id);
   const hunt = await env.DB.prepare(`SELECT id, name, emoji, tagline, starts_on, ends_on FROM hunts WHERE destination_id = ? AND status = 'live' ORDER BY id LIMIT 1`).bind(d.id).first();
   const s = await getSettings(env.DB);
-  return json({ destination: { id: d.id, name: d.name, country: d.country, lat: d.center_lat, lng: d.center_lng, status: d.status }, hunt, settings: { creditsPerFind: s.creditsPerFind, rafflePrize: s.rafflePrize, claimRadius: s.claimRadius }, nextRaffleAt: iso(nextRaffleAt()) });
+  return json({ destination: { id: d.id, name: d.name, country: d.country, lat: d.center_lat, lng: d.center_lng, status: d.status }, hunt, settings: { creditsPerFind: s.creditsPerFind, rafflePrize: s.rafflePrize, claimRadius: s.claimRadius, claimHours: s.claimHours }, nextRaffleAt: iso(nextRaffleAt()) });
 }
 
 export async function listDrops(req, env, user) {
@@ -95,12 +95,20 @@ export async function getDrop(req, env, user, id) {
   return json({ drop, claim });
 }
 
-export async function dropPhoto(req, env, id) {
-  const r = await env.DB.prepare('SELECT photo FROM treasure_drops WHERE id = ?').bind(id).first();
-  if (!r || !r.photo) return new Response('Not found', { status: 404 });
-  const m = r.photo.match(/^data:(image\/(?:jpeg|png|webp));base64,(.+)$/);
+function imageResponse(dataUrl, cache = 'public, max-age=3600') {
+  const m = String(dataUrl || '').match(/^data:(image\/(?:jpeg|png|webp));base64,(.+)$/);
   if (!m) return new Response('Not found', { status: 404 });
-  return new Response(Uint8Array.from(atob(m[2]), (c) => c.charCodeAt(0)), { headers: { 'content-type': m[1], 'cache-control': 'public, max-age=3600' } });
+  return new Response(Uint8Array.from(atob(m[2]), (c) => c.charCodeAt(0)), { headers: { 'content-type': m[1], 'cache-control': cache } });
+}
+
+export async function dropPhoto(req, env, id, n = 0) {
+  const r = await env.DB.prepare('SELECT data_url FROM drop_photos WHERE drop_id = ? ORDER BY position LIMIT 1 OFFSET ?').bind(id, n).first();
+  return imageResponse(r?.data_url);
+}
+
+export async function merchantLogo(req, env, id) {
+  const r = await env.DB.prepare('SELECT logo FROM merchants WHERE id = ?').bind(id).first();
+  return imageResponse(r?.logo, 'public, max-age=600');
 }
 
 export async function claimDrop(req, env, user, id) {
@@ -126,7 +134,7 @@ export async function claimDrop(req, env, user, id) {
   const took = await env.DB.prepare(`UPDATE treasure_drops SET remaining = remaining - 1 WHERE id = ? AND remaining > 0 RETURNING remaining`).bind(id).first();
   if (!took) bad('Someone found the last one. Try another treasure!', 409);
   for (let i = 0; i < 5; i++) {
-    const code = randomCode(6);
+    const code = couponCode();
     try {
       const claim = await env.DB.prepare(`INSERT INTO claims(user_id, drop_id, code, expires_at, claim_lat, claim_lng, claim_distance_m) VALUES (?,?,?,?,?,?,?) RETURNING code, status, expires_at`)
         .bind(user.id, id, code, addHours(s.claimHours), lat, lng, away).first();
@@ -204,6 +212,21 @@ function merchantId(user, url) {
   return m;
 }
 
+// Up to 4 gallery photos per treasure (like a TIN Coupon).
+async function validPhotos(b) {
+  const list = Array.isArray(b.photos) ? b.photos : b.photo ? [b.photo] : [];
+  if (list.length > 4) bad('Please add at most 4 photos');
+  const out = [];
+  for (const p of list) out.push(await validPhoto(p));
+  return out.filter(Boolean);
+}
+async function savePhotos(env, dropId, photos) {
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM drop_photos WHERE drop_id = ?').bind(dropId),
+    ...photos.map((p, i) => env.DB.prepare('INSERT INTO drop_photos(drop_id, position, data_url) VALUES (?,?,?)').bind(dropId, i, p)),
+  ]);
+}
+
 async function validPhoto(v) {
   if (v == null || v === '') return null;
   if (typeof v !== 'string' || !/^data:image\/(jpeg|png|webp);base64,/.test(v)) bad('Photo must be a JPEG, PNG or WebP image');
@@ -232,10 +255,27 @@ function dropInput(b, partial = false) {
 export async function merchantMe(req, env, user) {
   const url = new URL(req.url);
   const id = merchantId(user, url);
-  const m = await env.DB.prepare('SELECT id, name, category, address, lat, lng, hours, status, destination_id FROM merchants WHERE id = ?').bind(id).first();
+  const m = await env.DB.prepare('SELECT id, name, category, address, lat, lng, hours, status, destination_id, logo IS NOT NULL AS has_logo FROM merchants WHERE id = ?').bind(id).first();
   if (!m) bad('Merchant not found', 404);
   const s = await getSettings(env.DB);
   return json({ merchant: m, dropPrice: s.dropPrice, payments: stripeEnabled(env) ? 'stripe' : 'invoice' });
+}
+
+export async function updateMerchantProfile(req, env, user) {
+  const url = new URL(req.url);
+  const id = merchantId(user, url);
+  const b = await body(req, 300_000);
+  const set = {};
+  if (b.logo !== undefined) {
+    if (b.logo && (typeof b.logo !== 'string' || !/^data:image\/(jpeg|png|webp);base64,/.test(b.logo))) bad('Logo must be a JPEG, PNG or WebP image');
+    if (b.logo && b.logo.length > 160_000) bad('Logo is too large; please use a smaller image');
+    set.logo = b.logo || null;
+  }
+  for (const k of ['hours', 'address', 'phone', 'website']) if (b[k] !== undefined) set[k] = b[k] ? str(b[k], { max: 200, name: k }) : null;
+  const keys = Object.keys(set);
+  if (!keys.length) bad('Nothing to update');
+  await env.DB.prepare(`UPDATE merchants SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`).bind(...keys.map((k) => set[k]), id).run();
+  return json({ ok: true });
 }
 
 export async function merchantDrops(req, env, user) {
@@ -253,18 +293,20 @@ export async function createDrop(req, env, user) {
   const mid = merchantId(user, url);
   const m = await env.DB.prepare('SELECT * FROM merchants WHERE id = ?').bind(mid).first();
   if (!m || !['active'].includes(m.status)) bad('Your merchant account is not active yet');
-  const b = await body(req);
+  const b = await body(req, 1_000_000);
   const d = dropInput(b);
   const quantity = num(b.quantity, { min: 1, max: 1000, int: true, name: 'How many drops' });
-  const photo = await validPhoto(b.photo);
+  const photos = await validPhotos(b);
+  const terms = b.terms ? str(b.terms, { max: 500, name: 'Terms' }) : null;
   const s = await getSettings(env.DB);
   const fee = quantity * s.dropPrice;
   const row = await env.DB.prepare(
     `INSERT INTO treasure_drops(merchant_id, destination_id, title, item, category, emoji, story_text, gps_lat, gps_lng, walking_distance,
-       difficulty, reward_value_usd, is_mystery, kid_friendly, quantity, remaining, fee_usd, photo, status)
+       difficulty, reward_value_usd, is_mystery, kid_friendly, quantity, remaining, fee_usd, terms, status)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending') RETURNING id, title, item, quantity, status, fee_usd`
   ).bind(mid, m.destination_id, d.title, d.item, d.category, d.emoji, d.story_text, d.gps_lat ?? m.lat, d.gps_lng ?? m.lng,
-    d.walking_distance, d.difficulty, d.reward_value_usd, d.is_mystery, d.kid_friendly, quantity, quantity, fee, photo).first();
+    d.walking_distance, d.difficulty, d.reward_value_usd, d.is_mystery, d.kid_friendly, quantity, quantity, fee, terms).first();
+  if (photos.length) await savePhotos(env, row.id, photos);
   // HQ-created drops and free drops skip payment; otherwise Stripe if configured, else invoice.
   if (user.role === 'admin' || fee <= 0) {
     await env.DB.prepare(`UPDATE treasure_drops SET payment_status = 'waived' WHERE id = ?`).bind(row.id).run();
@@ -282,9 +324,11 @@ export async function updateDrop(req, env, user, id) {
   const mid = merchantId(user, url);
   const cur = await env.DB.prepare('SELECT * FROM treasure_drops WHERE id = ? AND merchant_id = ?').bind(id, mid).first();
   if (!cur) bad('Treasure not found', 404);
-  const b = await body(req);
+  const b = await body(req, 1_000_000);
   const d = dropInput(b, true);
-  if (b.photo !== undefined) d.photo = await validPhoto(b.photo);
+  let photos = null;
+  if (b.photos !== undefined || b.photo !== undefined) photos = await validPhotos(b);
+  if (b.terms !== undefined) d.terms = b.terms ? str(b.terms, { max: 500, name: 'Terms' }) : null;
   if (b.status !== undefined) {
     // Merchants can pause/resume; only HQ approves.
     const allowed = { active: ['paused'], paused: ['active'] }[cur.status] || [];
@@ -298,11 +342,12 @@ export async function updateDrop(req, env, user, id) {
     d.payment_status = oneOf(b.paymentStatus, ['waived', 'invoice'], 'paymentStatus');
   }
   // Content edits on a live drop go back to HQ for review.
-  const contentKeys = ['title', 'item', 'story_text', 'photo'];
-  if (user.role !== 'admin' && cur.status === 'active' && contentKeys.some((k) => d[k] !== undefined && d[k] !== cur[k])) d.status = 'pending';
+  const contentKeys = ['title', 'item', 'story_text', 'terms'];
+  if (user.role !== 'admin' && cur.status === 'active' && (photos || contentKeys.some((k) => d[k] !== undefined && d[k] !== cur[k]))) d.status = 'pending';
+  if (photos) await savePhotos(env, id, photos);
   Object.keys(d).forEach((k) => d[k] === undefined && delete d[k]);
   const keys = Object.keys(d);
-  if (!keys.length) return json({ ok: true });
+  if (!keys.length) return json({ ok: true, status: d.status ?? cur.status });
   await env.DB.prepare(`UPDATE treasure_drops SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`).bind(...keys.map((k) => d[k]), id).run();
   return json({ ok: true, status: d.status ?? cur.status });
 }
@@ -311,7 +356,7 @@ export async function lookupCode(req, env, user) {
   const url = new URL(req.url);
   const mid = merchantId(user, url);
   const b = await body(req, 5_000);
-  const code = String(b.code || '').trim().toUpperCase().replace(/^TIN-TH:/, '');
+  const code = normalizeCode(b.code);
   const c = await env.DB.prepare(
     `SELECT c.id, c.code, c.status, c.expires_at, d.id AS drop_id, d.title, d.item, d.emoji, d.merchant_id, u.display_name
        FROM claims c JOIN treasure_drops d ON d.id = c.drop_id JOIN tin_users u ON u.id = c.user_id WHERE c.code = ?`).bind(code).first();
@@ -327,7 +372,7 @@ export async function confirmRedemption(req, env, user) {
   const url = new URL(req.url);
   const mid = merchantId(user, url);
   const b = await body(req, 450_000);
-  const code = String(b.code || '').trim().toUpperCase().replace(/^TIN-TH:/, '');
+  const code = normalizeCode(b.code);
   const type = oneOf(b.type, ['photo', 'signature'], 'Proof type');
   const proof = typeof b.proof === 'string' ? b.proof : '';
   if (!/^data:image\/(png|jpeg|webp);base64,/.test(proof)) bad('A photo or signature is required to confirm');

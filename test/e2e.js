@@ -50,7 +50,7 @@ const ok = (cond, msg) => { if (!cond) { errors.push(msg); console.log('FAIL', m
   // Detail -> claim -> QR
   await T.click('.drop:has-text("The Lighthouse Taco")');
   await T.waitForSelector('#claim');
-  const title = await T.locator('.hero h2').innerText();
+  const title = (await T.locator('.cp-title').innerText()).replace(/^\S+\s/, '').trim();
   await T.screenshot({ path: `${OUT}/03-detail.png` });
   ok(await T.locator('#claim').isDisabled(), `claim blocked when far away: ${(await T.locator('#gate').innerText()).trim()}`);
   const far = await T.evaluate(async () => { const id = (await fetch('/api/drops?destination=cozumel&radius=5000').then((r) => r.json())).drops[0].id; return fetch(`/api/drops/${id}/claim`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ lat: 20.40, lng: -86.90 }) }).then((r) => r.status); });
@@ -60,10 +60,11 @@ const ok = (cond, msg) => { if (!cond) { errors.push(msg); console.log('FAIL', m
   await T.waitForSelector('#claim:not([disabled])', { timeout: 15000 });
   ok(true, `claim unlocked at the treasure: ${(await T.locator('#gate').innerText()).trim()}`);
   await T.click('#claim');
-  await T.waitForSelector('.qrcard .code');
-  const code = (await T.locator('.qrcard .code').innerText()).trim();
+  await T.waitForSelector('.cp-code');
+  const code = (await T.locator('.cp-code').innerText()).trim();
   await T.screenshot({ path: `${OUT}/04-qr.png` });
-  ok(/^[A-Z0-9]{6}$/.test(code), `claim code issued (${code}) for ${title}`);
+  ok(/^\d{4} \d{4}$/.test(code), `8-digit coupon code issued (${code}) for ${title}`);
+  ok(await T.locator('.coupon .cp-status.s-claimed').count() === 1 && await T.locator('.cp-qr svg').count() === 1, 'coupon shows QR, code and Claimed status');
   const credBefore = await T.locator('#credBtn').innerText();
   ok(credBefore.includes('0'), 'no credits before confirmation');
 
@@ -154,6 +155,10 @@ const ok = (cond, msg) => { if (!cond) { errors.push(msg); console.log('FAIL', m
   await M.fill('#tn', `The Shrimp Shack Secret ${stamp % 1000}`); await M.fill('#it', 'Free shrimp taco');
   await M.fill('#cl', 'Where the fishermen tie up at dawn, a taco waits for the first brave explorer.');
   await M.fill('#qt', '15');
+  const shot = await M.screenshot({ type: 'jpeg', quality: 60 });
+  await M.setInputFiles('#pf', [{ name: 'a.jpg', mimeType: 'image/jpeg', buffer: shot }, { name: 'b.jpg', mimeType: 'image/jpeg', buffer: shot }]);
+  await M.waitForSelector('#phs figure >> nth=1');
+  await M.fill('#tm', 'Dine-in only.');
   await M.screenshot({ path: `${OUT}/11-merchant-create.png` });
   ok(await M.locator('text=Secure payment by Stripe').count() === 1, 'Stripe payment note shown');
   await M.click('#f button[type=submit]');
@@ -164,6 +169,9 @@ const ok = (cond, msg) => { if (!cond) { errors.push(msg); console.log('FAIL', m
   await M.waitForSelector('text=Payment received');
   await M.waitForSelector('.pill.pending');
   ok(await M.locator('text=💳 Paid').count() === 1, 'merchant paid via Stripe; treasure waiting for HQ');
+  await M.setInputFiles('#lg', { name: 'logo.jpg', mimeType: 'image/jpeg', buffer: shot });
+  await M.waitForSelector('text=Logo saved');
+  ok(true, 'merchant uploaded a logo');
   await M.screenshot({ path: `${OUT}/11b-merchant-paid.png` });
 
   await A.click('[data-t="drops"]');
@@ -173,6 +181,14 @@ const ok = (cond, msg) => { if (!cond) { errors.push(msg); console.log('FAIL', m
   await T.click('#rad'); // no-op focus
   await T.waitForSelector('.drop');
   ok(await T.locator(`.drop:has-text("The Shrimp Shack Secret ${stamp % 1000}")`).count() === 1, 'approved treasure visible to explorers');
+  await T.click(`.drop:has-text("The Shrimp Shack Secret ${stamp % 1000}")`);
+  await T.waitForSelector('.coupon img.cp-logo');
+  ok(await T.locator('.cp-track img').count() === 2 && await T.locator('.cp-nav.next').count() === 1, 'coupon shows merchant logo and 2-photo gallery with arrows');
+  await T.click('.cp-nav.next'); await T.waitForTimeout(400);
+  await T.click('.cp-terms summary');
+  ok((await T.locator('.cp-terms').innerText()).includes('Dine-in only.'), 'merchant terms shown on coupon');
+  await T.screenshot({ path: `${OUT}/17-coupon-gallery.png` });
+  await T.click('#bk');
 
   // Webhook signature check
   const wh = await T.evaluate(() => fetch('/api/stripe/webhook', { method: 'POST', headers: { 'stripe-signature': 't=1,v1=bad' }, body: '{}' }).then((r) => r.status));
