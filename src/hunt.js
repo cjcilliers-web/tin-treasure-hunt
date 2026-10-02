@@ -255,7 +255,7 @@ function dropInput(b, partial = false) {
 export async function merchantMe(req, env, user) {
   const url = new URL(req.url);
   const id = merchantId(user, url);
-  const m = await env.DB.prepare('SELECT id, name, category, address, lat, lng, hours, status, destination_id, logo IS NOT NULL AS has_logo FROM merchants WHERE id = ?').bind(id).first();
+  const m = await env.DB.prepare('SELECT id, name, category, address, lat, lng, hours, status, destination_id, trial_ends_at, logo IS NOT NULL AS has_logo FROM merchants WHERE id = ?').bind(id).first();
   if (!m) bad('Merchant not found', 404);
   const s = await getSettings(env.DB);
   return json({ merchant: m, dropPrice: s.dropPrice, payments: stripeEnabled(env) ? 'stripe' : 'invoice' });
@@ -307,10 +307,12 @@ export async function createDrop(req, env, user) {
   ).bind(mid, m.destination_id, d.title, d.item, d.category, d.emoji, d.story_text, d.gps_lat ?? m.lat, d.gps_lng ?? m.lng,
     d.walking_distance, d.difficulty, d.reward_value_usd, d.is_mystery, d.kid_friendly, quantity, quantity, fee, terms).first();
   if (photos.length) await savePhotos(env, row.id, photos);
-  // HQ-created drops and free drops skip payment; otherwise Stripe if configured, else invoice.
-  if (user.role === 'admin' || fee <= 0) {
-    await env.DB.prepare(`UPDATE treasure_drops SET payment_status = 'waived' WHERE id = ?`).bind(row.id).run();
-    return json({ drop: { ...row, payment_status: 'waived' }, fee }, 201);
+  // HQ-created drops, free drops and merchants in their TIN free trial skip payment;
+  // otherwise Stripe if configured, else invoice.
+  const inTrial = !!m.trial_ends_at && Date.parse(m.trial_ends_at) > Date.now();
+  if (user.role === 'admin' || fee <= 0 || inTrial) {
+    await env.DB.prepare(`UPDATE treasure_drops SET payment_status = 'waived'${inTrial ? ', fee_usd = 0' : ''} WHERE id = ?`).bind(row.id).run();
+    return json({ drop: { ...row, payment_status: 'waived', ...(inTrial ? { fee_usd: 0 } : {}) }, fee: inTrial ? 0 : fee, trial: inTrial }, 201);
   }
   if (stripeEnabled(env)) {
     const checkoutUrl = await startCheckout(env, req, row, m);

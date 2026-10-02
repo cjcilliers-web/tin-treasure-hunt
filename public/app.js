@@ -626,6 +626,7 @@ VIEWS.mList = async (el) => {
 function dropForm(el, d) {
   const edit = !!d;
   const price = S.settings.dropPrice ?? 1;
+  const trial = !!S.merchant?.trial_ends_at && Date.parse(S.merchant.trial_ends_at) > Date.now();
   el.innerHTML = `<button class="back" id="bk">← My treasures</button>
   <div class="hero" style="gap:4px"><h2>${edit ? 'Edit your treasure' : 'Create an adventure'}</h2><div class="note">You're not making a coupon. You're hiding a treasure for explorers to find.</div></div>
   <form class="form" id="f">
@@ -644,10 +645,10 @@ function dropForm(el, d) {
     <label>Your terms (optional)<textarea id="tm" maxlength="500" placeholder="e.g. Dine-in only. Not valid on public holidays.">${esc(d?.terms || '')}</textarea></label>
     <div class="photos" id="phs"></div>
     <label class="sbtn" style="justify-self:start;cursor:pointer">📷 Add photos (up to 4)<input type="file" accept="image/*" multiple hidden id="pf"></label>
-    ${edit ? '<p class="note">Changes to the name, reward, story or photo go back to TIN HQ for a quick review.</p>' : `<div class="sum"><span>Total to pay</span><b id="tot">$${10 * price}</b></div>`}
+    ${edit ? '<p class="note">Changes to the name, reward, story or photo go back to TIN HQ for a quick review.</p>' : trial ? `<div class="sum"><span>Free trial until ${esc(new Date(S.merchant.trial_ends_at).toLocaleDateString(undefined, { day: 'numeric', month: 'long' }))}</span><b id="tot">$0</b></div>` : `<div class="sum"><span>Total to pay</span><b id="tot">$${10 * price}</b></div>`}
     <div class="err" id="er"></div>
-    <button class="btn" type="submit">${edit ? 'Save changes' : 'Pay & send for approval'}</button>
-    ${edit ? '' : S.payments === 'stripe' ? '<p class="note">🔒 Secure payment by Stripe. Card, and OXXO where available.</p>' : '<p class="note">TIN will send you an invoice for the drop fee.</p>'}
+    <button class="btn" type="submit">${edit ? 'Save changes' : trial ? 'Send for approval (free trial)' : 'Pay & send for approval'}</button>
+    ${edit ? '' : trial ? '<p class="note">🎁 TIN free trial: your Treasure Drops are free until the trial ends. After that each drop is US$1, paid by card through Stripe.</p>' : S.payments === 'stripe' ? '<p class="note">🔒 Secure payment by Stripe. Card, and OXXO where available.</p>' : '<p class="note">TIN will send you an invoice for the drop fee.</p>'}
   </form>`;
   // Gallery photos: start from the treasure's current photos when editing.
   let photos = null, current = d?.photoCount || 0;
@@ -661,7 +662,7 @@ function dropForm(el, d) {
     }));
   };
   $('#bk', el).onclick = () => go('mList');
-  const qt = $('#qt', el); if (qt) qt.oninput = () => { $('#tot').textContent = `$${(Number(qt.value) || 0) * price}`; };
+  const qt = $('#qt', el); if (qt) qt.oninput = () => { $('#tot').textContent = trial ? '$0' : `$${(Number(qt.value) || 0) * price}`; };
   drawPhotos();
   $('#pf', el).onchange = async (e) => {
     const files = [...e.target.files]; if (!files.length) return;
@@ -682,7 +683,7 @@ function dropForm(el, d) {
       else {
         const r = await api(`/api/merchant/drops${mq()}`, { method: 'POST', body });
         if (r.checkoutUrl) { btn.textContent = 'Opening secure payment…'; location.href = r.checkoutUrl; return; }
-        toast(r.drop.payment_status === 'waived' ? 'Treasure created' : `Sent to TIN HQ for approval · $${r.fee}`);
+        toast(r.trial ? 'Sent to TIN HQ for approval · free trial' : r.drop.payment_status === 'waived' ? 'Treasure created' : `Sent to TIN HQ for approval · $${r.fee}`);
       }
       go('mList');
     } catch (err) { $('#er').textContent = err.message; btn.disabled = false; }
@@ -745,7 +746,7 @@ HQ.overview = async (el) => {
 HQ.merchants = async (el) => {
   const { merchants } = await api('/api/admin/merchants');
   const pill = (s) => `<span class="pill ${s === 'active' ? 'live' : s === 'declined' ? 'ended' : s}">${s}</span>`;
-  el.innerHTML = `<div class="card"><h3>Merchants</h3><div class="tbl"><table><thead><tr><th>Name</th><th>Type</th><th>Status</th><th>Contact</th><th class="n">Drops</th><th class="n">Redeemed</th><th class="n">Rating</th><th></th></tr></thead><tbody>
+  el.innerHTML = `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h3>Merchants</h3><button class="sbtn gold" id="syncTin" title="Bring in the merchants switched on in the TIN merchant cockpit">⟳ Sync from TIN Commerce</button></div><div class="tbl"><table><thead><tr><th>Name</th><th>Type</th><th>Status</th><th>Contact</th><th class="n">Drops</th><th class="n">Redeemed</th><th class="n">Rating</th><th></th></tr></thead><tbody>
   ${merchants.map((m) => `<tr><td>${esc(m.name)} ${m.is_sample ? '<span class="sample">sample</span>' : ''}${m.needs_location ? ` <button class="sbtn" data-loc="${m.id}" title="Paste coordinates from Google Maps">📍 Set location</button>` : ''}</td><td>${esc(m.category)}</td><td>${pill(m.status)}</td><td>${esc(m.contact_email || '')}</td><td class="n">${m.drops}</td><td class="n">${m.redemptions}</td><td class="n">${m.rating ?? '—'}</td>
     <td>${m.status === 'pending' ? `<button class="sbtn go" data-s="active" data-id="${m.id}">Approve</button> <button class="sbtn stop" data-s="declined" data-id="${m.id}">Decline</button>` : m.status === 'active' ? `<button class="sbtn stop" data-s="paused" data-id="${m.id}">Pause</button>` : `<button class="sbtn go" data-s="active" data-id="${m.id}">Activate</button>`}</td></tr>`).join('')}
   </tbody></table></div></div>
@@ -792,6 +793,7 @@ HQ.merchants = async (el) => {
     } catch (err) { hqToast(`Could not read that file: ${err.message}`); }
   };
   $('#af', el).onsubmit = async (e) => { e.preventDefault(); const f = Object.fromEntries(new FormData(e.target)); try { await api('/api/admin/merchants', { method: 'POST', body: { ...f, destination: S.dest.id } }); hqToast('Merchant added'); hqRender(); } catch (err) { hqToast(err.message); } };
+  $('#syncTin', el).onclick = async (e) => { e.target.disabled = true; try { const r = await api('/api/admin/sync-tin', { method: 'POST' }); hqToast(`TIN sync: ${r.added} added, ${r.updated} updated, ${r.paused} paused`); hqRender(); } catch (err) { hqToast(err.message); e.target.disabled = false; } };
 };
 
 function loadScript(src) {
