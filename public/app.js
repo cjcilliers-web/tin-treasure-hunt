@@ -716,10 +716,11 @@ let hqTab = 'overview';
 async function hqRender() {
   const el = $('#hq');
   const tabs = [['overview', 'Overview'], ['merchants', 'Merchants'], ['drops', 'Treasure Drops'], ['hunts', 'Hunts'], ['raffle', 'Raffle'], ['settings', 'Settings']];
-  el.innerHTML = `<div class="hqbar"><h1>TIN <em>HQ</em> · ${esc(S.dest.name)}</h1><span class="note">Signed in as ${esc(S.me.name)}</span></div>
+  el.innerHTML = `<div class="hqbar"><h1>TIN <em>HQ</em> · ${esc(S.dest.name)}</h1><span class="note">Signed in as ${esc(S.me.name)} · <button class="linkbtn" id="hqOut">Sign out</button></span></div>
   <div class="hqtabs" role="tablist">${tabs.map(([k, l]) => `<button role="tab" data-t="${k}" aria-selected="${hqTab === k}">${l}</button>`).join('')}</div>
   <div id="hqb"><div class="spin"></div></div>`;
   $$('[data-t]', el).forEach((b) => (b.onclick = () => { hqTab = b.dataset.t; hqRender(); }));
+  $('#hqOut', el).onclick = async () => { await api('/api/auth/logout', { method: 'POST' }).catch(() => {}); location.href = '/'; };
   const body = $('#hqb', el);
   try { await HQ[hqTab](body); } catch (e) { body.innerHTML = `<p class="empty">${esc(e.message)}</p>`; }
 }

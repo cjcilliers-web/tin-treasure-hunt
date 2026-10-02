@@ -24,18 +24,20 @@
       <form class="form" id="lf">
         ${signup ? '<label>Your name<input name="name" required maxlength="80" autocomplete="name"></label>' : ''}
         <label>Email<input name="email" type="email" required autocomplete="email"></label>
-        <label>Password<input name="password" type="password" required minlength="${signup ? 8 : 1}" autocomplete="${signup ? 'new-password' : 'current-password'}"></label>
+        <label>Password<span class="pwrow"><input name="password" id="pw" type="password" required minlength="${signup ? 8 : 1}" autocomplete="${signup ? 'new-password' : 'current-password'}"><button type="button" class="pwtog" id="pwt" aria-pressed="false">Show</button></span></label>
         ${signup ? '<label>Language<select name="language"><option value="en">English</option><option value="es">Español</option><option value="pt">Português</option><option value="fr">Français</option><option value="de">Deutsch</option></select></label>' : ''}
         <div class="err" id="le" role="alert"></div>
         <button class="btn" type="submit">${signup ? 'Create account' : 'Sign in'}</button>
       </form>
       <button class="linkbtn" id="sw">${signup ? 'Already have an account? Sign in' : 'New here? Create an account'}</button>`;
+    const pw = document.getElementById('pw'), pwt = document.getElementById('pwt');
+    pwt.onclick = () => { const show = pw.type === 'password'; pw.type = show ? 'text' : 'password'; pwt.textContent = show ? 'Hide' : 'Show'; pwt.setAttribute('aria-pressed', String(show)); };
     document.getElementById('sw').onclick = () => { mode = signup ? 'login' : 'signup'; draw(); };
     document.getElementById('lf').onsubmit = async (e) => {
       e.preventDefault();
       const f = Object.fromEntries(new FormData(e.target));
       if (dest) f.destination = dest;
-      const btn = e.target.querySelector('button'); btn.disabled = true;
+      const btn = e.target.querySelector('button[type=submit]'); btn.disabled = true;
       try {
         const r = await fetch(`/api/auth/${signup ? 'register' : 'login'}`, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify(f) });
         const d = await r.json();

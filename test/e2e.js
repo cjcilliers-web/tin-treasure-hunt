@@ -20,11 +20,11 @@ const ok = (cond, msg) => { if (!cond) { errors.push(msg); console.log('FAIL', m
   await A.fill('[name=name]', 'Christiaan Cilliers');
   await A.fill('[name=email]', process.env.ADMIN_EMAIL || 'cjcilliers@gmail.com');
   await A.fill('[name=password]', 'Treasure#2026');
-  await A.click('#lf button');
+  await A.click('#lf button[type=submit]');
   await Promise.race([A.waitForURL(/\/app/), A.waitForSelector('#le:has-text("already exists")')]);
   if (!/\/app/.test(A.url())) { // re-run against the same database: sign in instead
     await A.click('#sw'); await A.fill('[name=email]', process.env.ADMIN_EMAIL || 'cjcilliers@gmail.com'); await A.fill('[name=password]', 'Treasure#2026');
-    await A.click('#lf button'); await A.waitForURL(/\/app/);
+    await A.click('#lf button[type=submit]'); await A.waitForURL(/\/app/);
   }
   await A.waitForSelector('#viewsw:not([hidden])');
   ok(await A.locator('[data-mode="hq"]').isVisible(), 'admin sees TIN HQ switch');
@@ -38,7 +38,7 @@ const ok = (cond, msg) => { if (!cond) { errors.push(msg); console.log('FAIL', m
   await T.fill('[name=name]', 'Laura Martinez');
   await T.fill('[name=email]', `laura+${stamp}@example.com`);
   await T.fill('[name=password]', 'explorer123');
-  await T.click('#lf button');
+  await T.click('#lf button[type=submit]');
   await T.waitForURL(/\/app/);
   await T.waitForSelector('.drop');
   await T.waitForTimeout(600);
@@ -141,7 +141,7 @@ const ok = (cond, msg) => { if (!cond) { errors.push(msg); console.log('FAIL', m
   const M = await (await ctx(390, 844)).newPage(); watch(M, 'merchant');
   await M.goto(BASE + '/cozumel'); await M.click('#sw');
   await M.fill('[name=name]', 'Rosa Pérez'); await M.fill('[name=email]', `rosa+${stamp}@example.com`); await M.fill('[name=password]', 'merchant123');
-  await M.click('#lf button'); await M.waitForURL(/\/app/); await M.waitForSelector('.drop');
+  await M.click('#lf button[type=submit]'); await M.waitForURL(/\/app/); await M.waitForSelector('.drop');
   await M.click('[data-go="wallet"]'); await M.click('#biz');
   await M.fill('#bn', `Shrimp Shack ${stamp % 1000}`); await M.fill('#bc', 'Restaurant'); await M.fill('#bh', '12:00–21:00');
   await M.click('#f button'); await M.waitForSelector('text=Application sent');
