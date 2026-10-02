@@ -1,6 +1,9 @@
 name = "tin-treasure-hunt"
 main = "src/worker.js"
 compatibility_date = "2026-09-01"
+routes = [
+  { pattern = "hunt.tincommerce.com", custom_domain = true }
+]
 
 # Static front end (home, /cozumel, the app) lives in ./public
 [assets]
@@ -12,7 +15,7 @@ run_worker_first = ["/api/*", "/cozumel", "/cozumel/"]
 [[d1_databases]]
 binding = "DB"
 database_name = "tin-treasure-hunt"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"   # from: npx wrangler d1 create tin-treasure-hunt
+database_id = "a116a3fe-681c-4ada-a5e9-cfc7699ba97f"
 migrations_dir = "migrations"
 
 # Optional: lets Polly understand free-form questions with Workers AI.
