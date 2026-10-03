@@ -97,11 +97,19 @@ async function boot() {
 }
 
 async function handlePaymentReturn() {
-  const paid = params.get('paid'), unpaid = params.get('unpaid');
-  if (!paid && !unpaid) return;
+  const paid = params.get('paid'), unpaid = params.get('unpaid'), credits = params.get('credits'), cancel = params.get('credits_cancel'), asM = Number(params.get('merchant'));
+  if (!paid && !unpaid && !credits && !cancel) return;
   history.replaceState(null, '', location.pathname);
   if (S.me.role === 'traveler') return;
+  if (S.me.role === 'admin' && asM) S.merchantId = asM;
   S.mode = 'merchant'; saveUi(); setMode('merchant');
+  if (cancel) { go('mList'); toast('Payment cancelled. No drops were bought.'); return; }
+  if (credits) {
+    try { const r = await api(`/api/merchant/credits/checkout/${encodeURIComponent(credits)}${mq()}`); S.merchant = null; go('mList');
+      toast(r.paid ? `Payment received! ${r.drops} drops added. You now have ${r.balance}.` : 'Payment is processing. Your drops will appear shortly.'); }
+    catch (e) { go('mList'); toast(e.message); }
+    return;
+  }
   if (unpaid) { go('mList'); toast('Payment not finished. You can pay any time from My treasures.'); return; }
   try {
     const r = await api(`/api/merchant/checkout/${encodeURIComponent(paid)}`);
@@ -500,7 +508,7 @@ async function merchantGuard(el) {
     $$('[data-m]', el).forEach((b) => (b.onclick = () => { S.merchantId = Number(b.dataset.m); render(); }));
     return false;
   }
-  if (!S.merchant || S.merchant.id !== (S.merchantId || S.me.merchantId)) { const r = await api(`/api/merchant/me${mq()}`); S.merchant = r.merchant; S.payments = r.payments; S.settings.dropPrice = r.dropPrice; }
+  if (!S.merchant || S.merchant.id !== (S.merchantId || S.me.merchantId)) { const r = await api(`/api/merchant/me${mq()}`); S.merchant = r.merchant; S.payments = r.payments; S.settings.dropPrice = r.dropPrice; S.packs = r.packs || []; S.credits = r.credits ?? 0; S.ledger = r.ledger || []; }
   setLoc(`Merchant · ${S.merchant.name}`);
   return true;
 }
@@ -609,6 +617,7 @@ VIEWS.mList = async (el) => {
       ${S.merchant.has_logo ? `<img class="cp-logo" src="/api/merchants/${S.merchant.id}/logo?v=${Date.now()}" alt="Your logo">` : `<span class="cp-logo cp-mono">${esc(initials(S.merchant.name))}</span>`}
       <div><b>${esc(S.merchant.name)}</b><div class="note">Your logo appears on every treasure coupon.</div></div></div>
       <label class="sbtn" style="justify-self:start;cursor:pointer">${S.merchant.has_logo ? 'Change logo' : 'Upload logo'}<input type="file" accept="image/*" hidden id="lg"></label></div>
+  ${creditsCard()}
   <button class="btn" id="nd">＋ Create a new treasure</button>
   ${drops.length ? drops.map((d) => `<div class="card" style="gap:8px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b>${esc(d.emoji)} ${esc(d.title)}</b>${pill(d.status)}</div>
     <div class="note">${esc(d.item)} · ${d.remaining}/${d.quantity} left · ${d.redeemed} redeemed · ${d.waiting} waiting</div>
@@ -616,6 +625,7 @@ VIEWS.mList = async (el) => {
     <div class="row">${d.paymentStatus === 'unpaid' ? `<button class="sbtn gold" data-pay="${d.id}">Pay $${d.fee}</button>` : ''}${d.status === 'active' ? `<button class="sbtn stop" data-p="${d.id}">Pause</button>` : d.status === 'paused' ? `<button class="sbtn go" data-r="${d.id}">Resume</button>` : ''}<button class="sbtn" data-e="${d.id}">Edit</button></div></div>`).join('')
     : '<p class="empty">No treasures yet. Create your first adventure!</p>'}`;
   $('#nd', el).onclick = () => go('mNew');
+  wireCredits(el);
   $('#lg', el).onchange = async (e) => { const f = e.target.files[0]; if (!f) return; try { const logo = await shrink(f, 300, 0.85); await api(`/api/merchant/me${mq()}`, { method: 'PATCH', body: { logo } }); S.merchant = null; toast('Logo saved'); render(); } catch (err) { toast(err.message); } };
   const patch = async (id, body) => { try { await api(`/api/merchant/drops/${id}${mq()}`, { method: 'PATCH', body }); render(); } catch (e) { toast(e.message); } };
   $$('[data-p]', el).forEach((b) => (b.onclick = () => patch(b.dataset.p, { status: 'paused' })));
@@ -624,10 +634,32 @@ VIEWS.mList = async (el) => {
   $$('[data-pay]', el).forEach((b) => (b.onclick = async () => { b.disabled = true; try { const r = await api(`/api/merchant/drops/${b.dataset.pay}/pay${mq()}`, { method: 'POST' }); location.href = r.checkoutUrl; } catch (e) { toast(e.message); b.disabled = false; } }));
 };
 
+const money = (n) => `$${Number(n).toFixed(Number(n) % 1 ? 2 : 0)}`;
+function creditsCard() {
+  const price = S.settings.dropPrice ?? 1, packs = S.packs || [];
+  const online = S.payments === 'stripe';
+  const why = { welcome: '🎁 Welcome gift', gift: '🎁 Gift from TIN', purchase: '💳 Bought', drop: '🗝️ Treasure', refund: '↩️ Refund', adjust: '✏️ Adjusted by TIN' };
+  return `<div class="card credits" style="gap:10px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div><div class="note">Your drop credits</div><b style="font-size:2rem;line-height:1">🎟️ ${S.credits ?? 0}</b></div>
+      <div class="note" style="max-width:24ch">1 credit = 1 treasure drop. Buy drops upfront, then hide treasures any time.</div></div>
+    ${online ? `<div class="row" style="flex-wrap:wrap;gap:8px">${packs.map((p, i) => `<button class="sbtn gold" data-pack="${i}">Buy ${p.drops} drops · ${money(p.usd)}</button>`).join('')}</div>
+    <form id="buyf" class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><input id="buyn" type="number" min="1" max="10000" value="10" style="width:90px" aria-label="Number of drops"><span class="note">drops × ${money(price)} = <b id="buyt">${money(10 * price)}</b></span><button class="sbtn">Buy</button></form>
+    <p class="note">🔒 Secure card payment by Stripe.</p>` : '<p class="note">Online payment is not switched on yet. Ask TIN HQ for drops.</p>'}
+    ${(S.ledger || []).length ? `<details><summary class="note" style="cursor:pointer">History</summary><div class="hist">${S.ledger.map((l) => `<div><span>${why[l.reason] || l.reason}${l.note ? ' · ' + esc(l.note) : ''} <span class="note">${esc(l.created_at.slice(0, 10))}</span></span><b style="color:${l.delta > 0 ? 'var(--ok)' : 'inherit'}">${l.delta > 0 ? '+' : ''}${l.delta}</b></div>`).join('')}</div></details>` : ''}
+  </div>`;
+}
+function wireCredits(el) {
+  const price = S.settings.dropPrice ?? 1;
+  const buy = async (b, btn) => { btn.disabled = true; try { const r = await api(`/api/merchant/credits/checkout${mq()}`, { method: 'POST', body: b }); btn.textContent = 'Opening secure payment…'; location.href = r.checkoutUrl; } catch (e) { toast(e.message); btn.disabled = false; } };
+  $$('[data-pack]', el).forEach((b) => (b.onclick = () => buy({ pack: Number(b.dataset.pack) }, b)));
+  const n = $('#buyn', el); if (n) n.oninput = () => { $('#buyt', el).textContent = money((Number(n.value) || 0) * price); };
+  const f = $('#buyf', el); if (f) f.onsubmit = (e) => { e.preventDefault(); buy({ drops: Number(n.value) }, $('button', f)); };
+}
+
 function dropForm(el, d) {
   const edit = !!d;
   const price = S.settings.dropPrice ?? 1;
-  const trial = !!S.merchant?.trial_ends_at && Date.parse(S.merchant.trial_ends_at) > Date.now();
+  const hq = S.me.role === 'admin', have = S.credits ?? 0;
   el.innerHTML = `<button class="back" id="bk">← My treasures</button>
   <div class="hero" style="gap:4px"><h2>${edit ? 'Edit your treasure' : 'Create an adventure'}</h2><div class="note">You're not making a coupon. You're hiding a treasure for explorers to find.</div></div>
   <form class="form" id="f">
@@ -646,10 +678,10 @@ function dropForm(el, d) {
     <label>Your terms (optional)<textarea id="tm" maxlength="500" placeholder="e.g. Dine-in only. Not valid on public holidays.">${esc(d?.terms || '')}</textarea></label>
     <div class="photos" id="phs"></div>
     <label class="sbtn" style="justify-self:start;cursor:pointer">📷 Add photos (up to 4)<input type="file" accept="image/*" multiple hidden id="pf"></label>
-    ${edit ? '<p class="note">Changes to the name, reward, story or photo go back to TIN HQ for a quick review.</p>' : trial ? `<div class="sum"><span>Free trial until ${esc(new Date(S.merchant.trial_ends_at).toLocaleDateString(undefined, { day: 'numeric', month: 'long' }))}</span><b id="tot">$0</b></div>` : `<div class="sum"><span>Total to pay</span><b id="tot">$${10 * price}</b></div>`}
+    ${edit ? '<p class="note">Changes to the name, reward, story or photo go back to TIN HQ for a quick review.</p>' : hq ? '<div class="sum"><span>Created by TIN HQ</span><b>Free</b></div>' : `<div class="sum"><span>Uses drop credits · you have ${have}</span><b id="tot">10</b></div>`}
     <div class="err" id="er"></div>
-    <button class="btn" type="submit">${edit ? 'Save changes' : trial ? 'Send for approval (free trial)' : 'Pay & send for approval'}</button>
-    ${edit ? '' : trial ? '<p class="note">🎁 TIN free trial: your Treasure Drops are free until the trial ends. After that each drop is US$1, paid by card through Stripe.</p>' : S.payments === 'stripe' ? '<p class="note">🔒 Secure payment by Stripe. Card, and OXXO where available.</p>' : '<p class="note">TIN will send you an invoice for the drop fee.</p>'}
+    <button class="btn" type="submit">${edit ? 'Save changes' : 'Send to TIN HQ for approval'}</button>
+    ${edit || hq ? '' : `<p class="note" id="cnote">🎟️ Each drop uses 1 credit. If TIN HQ does not approve the treasure, your credits come back.</p><button type="button" class="sbtn gold" id="getmore" ${have >= 10 ? 'hidden' : ''}>Buy more drops</button>`}
   </form>`;
   // Gallery photos: start from the treasure's current photos when editing.
   let photos = null, current = d?.photoCount || 0;
@@ -663,7 +695,8 @@ function dropForm(el, d) {
     }));
   };
   $('#bk', el).onclick = () => go('mList');
-  const qt = $('#qt', el); if (qt) qt.oninput = () => { $('#tot').textContent = trial ? '$0' : `$${(Number(qt.value) || 0) * price}`; };
+  const qt = $('#qt', el); if (qt && !hq) qt.oninput = () => { const q = Number(qt.value) || 0; $('#tot').textContent = q; $('#getmore').hidden = q <= have; };
+  const gm = $('#getmore', el); if (gm) gm.onclick = () => go('mList');
   drawPhotos();
   $('#pf', el).onchange = async (e) => {
     const files = [...e.target.files]; if (!files.length) return;
@@ -683,8 +716,8 @@ function dropForm(el, d) {
       if (edit) { const r = await api(`/api/merchant/drops/${d.id}${mq()}`, { method: 'PATCH', body }); toast(r.status === 'pending' ? 'Saved. Sent to TIN HQ for review.' : 'Saved'); }
       else {
         const r = await api(`/api/merchant/drops${mq()}`, { method: 'POST', body });
-        if (r.checkoutUrl) { btn.textContent = 'Opening secure payment…'; location.href = r.checkoutUrl; return; }
-        toast(r.trial ? 'Sent to TIN HQ for approval · free trial' : r.drop.payment_status === 'waived' ? 'Treasure created' : `Sent to TIN HQ for approval · $${r.fee}`);
+        S.merchant = null;
+        toast(r.drop.payment_status === 'waived' ? 'Treasure created' : `Sent to TIN HQ for approval · ${r.creditsUsed} credits used, ${r.balance} left`);
       }
       go('mList');
     } catch (err) { $('#er').textContent = err.message; btn.disabled = false; }
@@ -747,8 +780,8 @@ HQ.overview = async (el) => {
 HQ.merchants = async (el) => {
   const { merchants } = await api('/api/admin/merchants');
   const pill = (s) => `<span class="pill ${s === 'active' ? 'live' : s === 'declined' ? 'ended' : s}">${s}</span>`;
-  el.innerHTML = `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h3>Merchants</h3><button class="sbtn gold" id="syncTin" title="Bring in the merchants switched on in the TIN merchant cockpit">⟳ Sync from TIN Commerce</button></div><div class="tbl"><table><thead><tr><th>Name</th><th>Type</th><th>Status</th><th>Contact</th><th class="n">Drops</th><th class="n">Redeemed</th><th class="n">Rating</th><th></th></tr></thead><tbody>
-  ${merchants.map((m) => `<tr><td>${esc(m.name)} ${m.is_sample ? '<span class="sample">sample</span>' : ''}${m.needs_location ? ` <button class="sbtn" data-loc="${m.id}" title="Paste coordinates from Google Maps">📍 Set location</button>` : ''}</td><td>${esc(m.category)}</td><td>${pill(m.status)}</td><td>${esc(m.contact_email || '')}</td><td class="n">${m.drops}</td><td class="n">${m.redemptions}</td><td class="n">${m.rating ?? '—'}</td>
+  el.innerHTML = `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h3>Merchants</h3><button class="sbtn gold" id="syncTin" title="Bring in the merchants switched on in the TIN merchant cockpit">⟳ Sync from TIN Commerce</button></div><div class="tbl"><table><thead><tr><th>Name</th><th>Type</th><th>Status</th><th>Contact</th><th class="n">Credits</th><th class="n">Drops</th><th class="n">Redeemed</th><th class="n">Rating</th><th></th></tr></thead><tbody>
+  ${merchants.map((m) => `<tr><td>${esc(m.name)} ${m.is_sample ? '<span class="sample">sample</span>' : ''}${m.needs_location ? ` <button class="sbtn" data-loc="${m.id}" title="Paste coordinates from Google Maps">📍 Set location</button>` : ''}</td><td>${esc(m.category)}</td><td>${pill(m.status)}</td><td>${esc(m.contact_email || '')}</td><td class="n"><b>${m.drop_credits ?? 0}</b> <button class="sbtn" data-gift="${m.id}" title="Give free drops (or type a minus number to take some away)">🎁 Give</button></td><td class="n">${m.drops}</td><td class="n">${m.redemptions}</td><td class="n">${m.rating ?? '—'}</td>
     <td>${m.status === 'pending' ? `<button class="sbtn go" data-s="active" data-id="${m.id}">Approve</button> <button class="sbtn stop" data-s="declined" data-id="${m.id}">Decline</button>` : m.status === 'active' ? `<button class="sbtn stop" data-s="paused" data-id="${m.id}">Pause</button>` : `<button class="sbtn go" data-s="active" data-id="${m.id}">Activate</button>`}</td></tr>`).join('')}
   </tbody></table></div></div>
   <div class="card"><h3>Import merchants</h3>
@@ -761,6 +794,12 @@ HQ.merchants = async (el) => {
   <form class="hqform" id="af"><label>Business name<input name="name" required></label><label>Type<input name="category" required placeholder="Restaurant"></label><label>Owner email<input name="email" type="email"></label>
   <label>Latitude<input name="lat" required value="${S.dest.lat}"></label><label>Longitude<input name="lng" required value="${S.dest.lng}"></label><label>Hours<input name="hours" placeholder="09:00–18:00"></label><label>Address<input name="address"></label><button class="sbtn gold">Add merchant</button></form></div>`;
   $$('[data-s]', el).forEach((b) => (b.onclick = async () => { try { await api(`/api/admin/merchants/${b.dataset.id}`, { method: 'PATCH', body: { status: b.dataset.s } }); hqToast('Updated'); hqRender(); } catch (e) { hqToast(e.message); } }));
+  $$('[data-gift]', el).forEach((b) => (b.onclick = async () => {
+    const m = merchants.find((x) => x.id === Number(b.dataset.gift));
+    const v = prompt(`How many free drops for ${m.name}? (Use a minus number to take drops away.)`, '25'); if (v === null) return;
+    const note = prompt('Note (optional), e.g. "Launch gift"', '') ?? '';
+    try { const r = await api(`/api/admin/merchants/${m.id}/credits`, { method: 'POST', body: { drops: Number(v), note } }); hqToast(`${m.name} now has ${r.balance} drop credits`); hqRender(); } catch (e) { hqToast(e.message); }
+  }));
   $$('[data-loc]', el).forEach((b) => (b.onclick = async () => {
     const v = prompt('Paste the GPS coordinates (from Google Maps, right-click the place → copy the numbers), e.g. 20.5112, -86.9468');
     if (!v) return; const m = v.match(/(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/);
@@ -882,12 +921,17 @@ HQ.settings = async (el) => {
   el.innerHTML = `<div class="card"><h3>Program settings</h3><form class="hqform" id="sf">
     <label>Credits per verified find<input name="creditsPerFind" type="number" min="1" value="${s.creditsPerFind}"></label>
     <label>Raffle prize (credits)<input name="rafflePrize" type="number" min="0" value="${s.rafflePrize}"></label>
-    <label>Price per drop (USD)<input name="dropPrice" type="number" min="0" step="0.5" value="${s.dropPrice}"></label>
+    <label>Price per single drop (USD)<input name="dropPrice" type="number" min="0" step="0.01" value="${s.dropPrice}"></label>
+    <label>Free welcome drops for each new merchant<input name="welcomeDrops" type="number" min="0" max="10000" value="${s.welcomeDrops ?? 25}"></label>
+    <fieldset style="grid-column:1/-1;border:1px solid var(--line);border-radius:10px;padding:10px"><legend class="note">Drop packs (leave a row empty to remove it)</legend>
+      ${[0, 1, 2, 3].map((i) => { const p = (s.dropPacks || [])[i] || {}; return `<div class="row" style="gap:8px;align-items:center;margin:4px 0"><input name="pd${i}" type="number" min="1" placeholder="Drops" value="${p.drops ?? ''}" style="width:110px" aria-label="Pack ${i + 1} drops"><span class="note">drops for US$</span><input name="pu${i}" type="number" min="0.5" step="0.01" placeholder="Price" value="${p.usd ?? ''}" style="width:110px" aria-label="Pack ${i + 1} price"></div>`; }).join('')}
+      <p class="note">Example: 100 drops for US$10 = 10 cents a drop. The minimum card payment is US$0.50.</p></fieldset>
     <label>Claim code valid (hours)<input name="claimHours" type="number" min="1" max="168" value="${s.claimHours}"></label>
     <label>Explorer must be within (metres) to claim<input name="claimRadius" type="number" min="5" max="5000" value="${s.claimRadius}"></label>
     <p class="note" style="grid-column:1/-1">Phone GPS is usually accurate to about 5–20 m, and less inside buildings. A very small distance can stop explorers who are standing at the door.</p>
     <button class="sbtn gold">Save</button></form></div>`;
-  $('#sf', el).onsubmit = async (e) => { e.preventDefault(); const f = Object.fromEntries([...new FormData(e.target)].map(([k, v]) => [k, Number(v)])); try { await api('/api/admin/settings', { method: 'PUT', body: f }); Object.assign(S.settings, { creditsPerFind: f.creditsPerFind, rafflePrize: f.rafflePrize, dropPrice: f.dropPrice, claimRadius: f.claimRadius }); hqToast('Settings saved'); } catch (err) { hqToast(err.message); } };
+  $('#sf', el).onsubmit = async (e) => { e.preventDefault(); const raw = Object.fromEntries([...new FormData(e.target)]); const f = {}; for (const [k, v] of Object.entries(raw)) if (!/^p[du]\d$/.test(k)) f[k] = Number(v);
+    f.dropPacks = [0, 1, 2, 3].map((i) => ({ drops: Number(raw['pd' + i]), usd: Number(raw['pu' + i]) })).filter((p) => p.drops > 0 && p.usd > 0); try { await api('/api/admin/settings', { method: 'PUT', body: f }); Object.assign(S.settings, { creditsPerFind: f.creditsPerFind, rafflePrize: f.rafflePrize, dropPrice: f.dropPrice, claimRadius: f.claimRadius }); hqToast('Settings saved'); } catch (err) { hqToast(err.message); } };
 };
 
 boot().catch((e) => { document.body.innerHTML = `<p class="empty" style="padding:40px">${esc(e.message)}</p>`; });

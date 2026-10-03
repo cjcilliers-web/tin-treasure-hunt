@@ -6,6 +6,7 @@ import { askPolly, pollyTip } from './polly.js';
 import { runRaffle, raffleStatus, raffleDrawNow } from './raffle.js';
 import { payDrop, verifyCheckout, stripeWebhook } from './payments.js';
 import { syncTinMerchants, adminSyncTin } from './tin-sync.js';
+import { myDropCredits, buyCredits, verifyCreditsCheckout, adminGiveCredits } from './credits.js';
 
 const routes = [
   ['POST', /^\/api\/auth\/register$/, (r, e) => register(r, e)],
@@ -36,6 +37,10 @@ const routes = [
   ['POST', /^\/api\/merchant\/drops\/(\d+)\/pay$/, (r, e, u, id) => payDrop(r, e, u, Number(id))],
   ['GET', /^\/api\/merchant\/checkout\/([A-Za-z0-9_]+)$/, (r, e, u, sid) => verifyCheckout(r, e, u, sid)],
   ['POST', /^\/api\/stripe\/webhook$/, (r, e) => stripeWebhook(r, e)],
+  ['GET', /^\/api\/merchant\/credits$/, (r, e, u) => myDropCredits(r, e, u)],
+  ['POST', /^\/api\/merchant\/credits\/checkout$/, (r, e, u) => buyCredits(r, e, u)],
+  ['GET', /^\/api\/merchant\/credits\/checkout\/([A-Za-z0-9_]+)$/, (r, e, u, sid) => verifyCreditsCheckout(r, e, u, sid)],
+  ['POST', /^\/api\/admin\/merchants\/(\d+)\/credits$/, (r, e, u, id) => adminGiveCredits(r, e, u, Number(id))],
   ['POST', /^\/api\/merchant\/lookup$/, (r, e, u) => H.lookupCode(r, e, u)],
   ['POST', /^\/api\/merchant\/confirm$/, (r, e, u) => H.confirmRedemption(r, e, u)],
   ['GET', /^\/api\/merchant\/stats$/, (r, e, u) => H.merchantStats(r, e, u)],
