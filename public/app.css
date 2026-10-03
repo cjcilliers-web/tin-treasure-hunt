@@ -262,3 +262,5 @@ video.scan{width:100%;border-radius:12px;background:#000;aspect-ratio:1;object-f
 .pwrow{position:relative;display:block}
 .pwrow input{padding-right:64px}
 .pwtog{position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:0;color:var(--gold-hi);cursor:pointer;font-size:.8rem;padding:6px 8px}
+
+.tin-tiles{filter:invert(1) hue-rotate(180deg) brightness(.9) contrast(.9) saturate(.6)}
