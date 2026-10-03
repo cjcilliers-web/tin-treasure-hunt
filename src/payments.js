@@ -5,7 +5,10 @@ import { bad, json, nowIso } from './lib.js';
 import { requireRole } from './auth.js';
 
 const STRIPE = 'https://api.stripe.com/v1';
-export const stripeEnabled = (env) => typeof env.STRIPE_SECRET_KEY === 'string' && env.STRIPE_SECRET_KEY.startsWith('sk_');
+// Accepts a full secret key (sk_) or, preferably, a restricted key (rk_) with Checkout Sessions: Write.
+export const stripeEnabled = (env) => typeof env.STRIPE_SECRET_KEY === 'string' && /^(sk|rk)_(test|live)_/.test(env.STRIPE_SECRET_KEY);
+// Pin the API version per request so the account's default version (kept old for TIN) is never touched.
+const STRIPE_VERSION = '2024-06-20';
 
 function form(obj, prefix = '', out = new URLSearchParams()) {
   for (const [k, v] of Object.entries(obj)) {
@@ -19,7 +22,7 @@ function form(obj, prefix = '', out = new URLSearchParams()) {
 async function stripe(env, path, { method = 'GET', body } = {}) {
   const res = await fetch(`${env.STRIPE_API_BASE || STRIPE}${path}`, {
     method,
-    headers: { authorization: `Bearer ${env.STRIPE_SECRET_KEY}`, ...(body ? { 'content-type': 'application/x-www-form-urlencoded' } : {}) },
+    headers: { authorization: `Bearer ${env.STRIPE_SECRET_KEY}`, 'stripe-version': STRIPE_VERSION, ...(body ? { 'content-type': 'application/x-www-form-urlencoded' } : {}) },
     body: body ? form(body) : undefined,
   });
   const data = await res.json();
