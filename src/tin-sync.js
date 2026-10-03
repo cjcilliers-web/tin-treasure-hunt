@@ -3,7 +3,7 @@
 import { json } from './lib.js';
 import { requireRole } from './auth.js';
 
-const FEEDS = [['cozumel', 'cozumel']]; // [TIN market slug, Treasure Hunt destination id]
+const FEEDS = [['mexico-quintana-roo-cozumel', 'cozumel']]; // [TIN market slug, Treasure Hunt destination id]
 
 export async function syncTinMerchants(env) {
   const base = String(env.TIN_COMMERCE_URL || 'https://tincommerce.com').replace(/\/$/, '');
