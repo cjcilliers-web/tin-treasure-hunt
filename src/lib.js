@@ -67,6 +67,15 @@ export function couponCode() {
 // Accepts "TIN-TH:12345678", "1234 5678", "1234-5678" or legacy 6-letter codes.
 export const normalizeCode = (raw) => String(raw || '').trim().toUpperCase().replace(/^TIN-TH:/, '').replace(/[\s-]/g, '');
 
+// Drop packs: [{ drops, usd }], e.g. 100 drops for US$10. Invalid entries are ignored.
+export function parsePacks(raw) {
+  try {
+    const a = JSON.parse(raw || '[]');
+    return Array.isArray(a) ? a.map((p) => ({ drops: Math.round(Number(p.drops)), usd: Math.round(Number(p.usd) * 100) / 100 }))
+      .filter((p) => p.drops >= 1 && p.drops <= 100000 && p.usd >= 0.5 && p.usd <= 100000).slice(0, 6) : [];
+  } catch { return []; }
+}
+
 export async function getSettings(db) {
   const { results } = await db.prepare('SELECT key, value FROM settings').all();
   const s = Object.fromEntries(results.map((r) => [r.key, r.value]));
@@ -76,6 +85,8 @@ export async function getSettings(db) {
     dropPrice: Number(s.drop_price_usd ?? 1),
     claimHours: Number(s.claim_hours ?? 24),
     claimRadius: Number(s.claim_radius_m ?? 10),
+    welcomeDrops: Number(s.welcome_drops ?? 25),
+    dropPacks: parsePacks(s.drop_packs),
   };
 }
 

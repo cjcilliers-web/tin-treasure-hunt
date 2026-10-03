@@ -3,6 +3,7 @@
 // If STRIPE_SECRET_KEY is not set, drops fall back to 'invoice' (TIN bills later).
 import { bad, json, nowIso } from './lib.js';
 import { requireRole } from './auth.js';
+import { markCreditsPaid } from './credits.js';
 
 const STRIPE = 'https://api.stripe.com/v1';
 // Accepts a full secret key (sk_) or, preferably, a restricted key (rk_) with Checkout Sessions: Write.
@@ -19,7 +20,7 @@ function form(obj, prefix = '', out = new URLSearchParams()) {
   return out;
 }
 
-async function stripe(env, path, { method = 'GET', body } = {}) {
+export async function stripe(env, path, { method = 'GET', body } = {}) {
   const res = await fetch(`${env.STRIPE_API_BASE || STRIPE}${path}`, {
     method,
     headers: { authorization: `Bearer ${env.STRIPE_SECRET_KEY}`, 'stripe-version': STRIPE_VERSION, ...(body ? { 'content-type': 'application/x-www-form-urlencoded' } : {}) },
@@ -108,10 +109,12 @@ export async function stripeWebhook(req, env) {
 
   const event = JSON.parse(payload);
   const s = event.data?.object || {};
+  const isCredits = String(s.client_reference_id || '').startsWith('credits:');
   if ((event.type === 'checkout.session.completed' && s.payment_status === 'paid') || event.type === 'checkout.session.async_payment_succeeded') {
-    await markPaid(env, s.id, s.payment_intent);
+    if (isCredits) await markCreditsPaid(env, s.id, s.payment_intent); else await markPaid(env, s.id, s.payment_intent);
   } else if (event.type === 'checkout.session.expired' || event.type === 'checkout.session.async_payment_failed') {
-    await env.DB.prepare(`UPDATE payments SET status = 'expired' WHERE stripe_session_id = ? AND status = 'created'`).bind(s.id).run();
+    const table = isCredits ? 'credit_purchases' : 'payments';
+    await env.DB.prepare(`UPDATE ${table} SET status = 'expired' WHERE stripe_session_id = ? AND status = 'created'`).bind(s.id).run();
   }
   return json({ received: true });
 }

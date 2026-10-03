@@ -2,6 +2,7 @@
 // Runs hourly from the cron and on demand from TIN HQ. Only public business data is read.
 import { json } from './lib.js';
 import { requireRole } from './auth.js';
+import { grantWelcome } from './credits.js';
 
 const FEEDS = [['mexico-quintana-roo-cozumel', 'cozumel']]; // [TIN market slug, Treasure Hunt destination id]
 
@@ -23,12 +24,13 @@ export async function syncTinMerchants(env) {
       const name = String(m.name || '').slice(0, 100), category = String(m.category || 'Business').slice(0, 60);
       const cur = await env.DB.prepare('SELECT id FROM merchants WHERE tin_merchant_id = ?').bind(id).first();
       if (cur) {
-        await env.DB.prepare(`UPDATE merchants SET name = ?, category = ?, address = ?, lat = ?, lng = ?, trial_ends_at = ?, status = 'active' WHERE id = ?`)
-          .bind(name, category, m.address || null, lat, lng, m.trialEndsAt || null, cur.id).run();
+        await env.DB.prepare(`UPDATE merchants SET name = ?, category = ?, address = ?, lat = ?, lng = ?, status = 'active' WHERE id = ?`)
+          .bind(name, category, m.address || null, lat, lng, cur.id).run();
         result.updated++;
       } else {
-        await env.DB.prepare(`INSERT INTO merchants(destination_id, name, category, address, lat, lng, status, tin_merchant_id, trial_ends_at) VALUES (?,?,?,?,?,?,'active',?,?)`)
-          .bind(dest, name, category, m.address || null, lat, lng, id, m.trialEndsAt || null).run();
+        const ins = await env.DB.prepare(`INSERT INTO merchants(destination_id, name, category, address, lat, lng, status, tin_merchant_id) VALUES (?,?,?,?,?,?,'active',?) RETURNING id`)
+          .bind(dest, name, category, m.address || null, lat, lng, id).first();
+        await grantWelcome(env, ins.id);
         result.added++;
       }
     }

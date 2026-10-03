@@ -1,10 +1,11 @@
 // Phase 2 — core Treasure Hunt: discovery, claims, redemption, credits, ratings.
 import {
   bad, body, json, str, num, oneOf, nowIso, addHours, distanceM, walkMin, couponCode, normalizeCode,
-  getSettings, CATEGORIES, DIFFICULTIES, nextRaffleAt, lastRaffleAt, iso,
+  getSettings, parsePacks, CATEGORIES, DIFFICULTIES, nextRaffleAt, lastRaffleAt, iso,
 } from './lib.js';
 import { requireRole } from './auth.js';
 import { stripeEnabled, startCheckout } from './payments.js';
+import { spendCredits, changeCredits, grantWelcome, creditsInfo } from './credits.js';
 
 // ---------- shared queries ----------
 
@@ -255,10 +256,10 @@ function dropInput(b, partial = false) {
 export async function merchantMe(req, env, user) {
   const url = new URL(req.url);
   const id = merchantId(user, url);
-  const m = await env.DB.prepare('SELECT id, name, category, address, lat, lng, hours, status, destination_id, trial_ends_at, logo IS NOT NULL AS has_logo FROM merchants WHERE id = ?').bind(id).first();
+  const m = await env.DB.prepare('SELECT id, name, category, address, lat, lng, hours, status, destination_id, drop_credits, logo IS NOT NULL AS has_logo FROM merchants WHERE id = ?').bind(id).first();
   if (!m) bad('Merchant not found', 404);
-  const s = await getSettings(env.DB);
-  return json({ merchant: m, dropPrice: s.dropPrice, payments: stripeEnabled(env) ? 'stripe' : 'invoice' });
+  const c = await creditsInfo(env, id, 10);
+  return json({ merchant: m, dropPrice: c.dropPrice, packs: c.packs, credits: c.balance, ledger: c.ledger, payments: c.payments });
 }
 
 export async function updateMerchantProfile(req, env, user) {
@@ -298,27 +299,26 @@ export async function createDrop(req, env, user) {
   const quantity = num(b.quantity, { min: 1, max: 1000, int: true, name: 'How many drops' });
   const photos = await validPhotos(b);
   const terms = b.terms ? str(b.terms, { max: 500, name: 'Terms' }) : null;
-  const s = await getSettings(env.DB);
-  const fee = quantity * s.dropPrice;
+  const isHq = user.role === 'admin';
+  if (!isHq && (m.drop_credits ?? 0) < quantity)
+    bad(`You have ${m.drop_credits ?? 0} drop credit${m.drop_credits === 1 ? '' : 's'} and this treasure needs ${quantity}. Buy more drops first.`, 402);
   const row = await env.DB.prepare(
     `INSERT INTO treasure_drops(merchant_id, destination_id, title, item, category, emoji, story_text, gps_lat, gps_lng, walking_distance,
-       difficulty, reward_value_usd, is_mystery, kid_friendly, quantity, remaining, fee_usd, terms, status)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending') RETURNING id, title, item, quantity, status, fee_usd`
+       difficulty, reward_value_usd, is_mystery, kid_friendly, quantity, remaining, fee_usd, terms, status, payment_status)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,'pending',?) RETURNING id, title, item, quantity, status, fee_usd, payment_status`
   ).bind(mid, m.destination_id, d.title, d.item, d.category, d.emoji, d.story_text, d.gps_lat ?? m.lat, d.gps_lng ?? m.lng,
-    d.walking_distance, d.difficulty, d.reward_value_usd, d.is_mystery, d.kid_friendly, quantity, quantity, fee, terms).first();
+    d.walking_distance, d.difficulty, d.reward_value_usd, d.is_mystery, d.kid_friendly, quantity, quantity, terms, isHq ? 'waived' : 'prepaid').first();
+  // Prepaid drops: spend one credit per drop (HQ-created drops are free).
+  let balance = null;
+  if (!isHq) {
+    balance = await spendCredits(env, mid, quantity, `drop:${row.id}`);
+    if (balance === null) { // someone spent the credits in the meantime
+      await env.DB.prepare('DELETE FROM treasure_drops WHERE id = ?').bind(row.id).run();
+      bad('Not enough drop credits. Buy more drops first.', 402);
+    }
+  }
   if (photos.length) await savePhotos(env, row.id, photos);
-  // HQ-created drops, free drops and merchants in their TIN free trial skip payment;
-  // otherwise Stripe if configured, else invoice.
-  const inTrial = !!m.trial_ends_at && Date.parse(m.trial_ends_at) > Date.now();
-  if (user.role === 'admin' || fee <= 0 || inTrial) {
-    await env.DB.prepare(`UPDATE treasure_drops SET payment_status = 'waived'${inTrial ? ', fee_usd = 0' : ''} WHERE id = ?`).bind(row.id).run();
-    return json({ drop: { ...row, payment_status: 'waived', ...(inTrial ? { fee_usd: 0 } : {}) }, fee: inTrial ? 0 : fee, trial: inTrial }, 201);
-  }
-  if (stripeEnabled(env)) {
-    const checkoutUrl = await startCheckout(env, req, row, m);
-    return json({ drop: { ...row, payment_status: 'unpaid' }, fee, checkoutUrl }, 201);
-  }
-  return json({ drop: { ...row, payment_status: 'invoice' }, fee }, 201);
+  return json({ drop: row, creditsUsed: isHq ? 0 : quantity, balance }, 201);
 }
 
 export async function updateDrop(req, env, user, id) {
@@ -339,6 +339,9 @@ export async function updateDrop(req, env, user, id) {
     if (d.status === 'active' && cur.status === 'pending' && cur.payment_status === 'unpaid' && b.paymentStatus !== 'waived')
       bad('This treasure is waiting for the merchant to pay. Waive the fee to approve it anyway.', 402);
   }
+  // HQ rejects a prepaid treasure before it went live: give the drops back.
+  if (user.role === 'admin' && d.status === 'rejected' && cur.status === 'pending' && cur.payment_status === 'prepaid')
+    d.payment_status = 'refunded';
   if (b.paymentStatus !== undefined) {
     if (user.role !== 'admin') bad('Not allowed', 403);
     d.payment_status = oneOf(b.paymentStatus, ['waived', 'invoice'], 'paymentStatus');
@@ -351,6 +354,7 @@ export async function updateDrop(req, env, user, id) {
   const keys = Object.keys(d);
   if (!keys.length) return json({ ok: true, status: d.status ?? cur.status });
   await env.DB.prepare(`UPDATE treasure_drops SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`).bind(...keys.map((k) => d[k]), id).run();
+  if (d.payment_status === 'refunded') await changeCredits(env, cur.merchant_id, cur.quantity, 'refund', { ref: `drop:${id}`, note: `Treasure “${cur.title}” not approved`, by: user.id });
   return json({ ok: true, status: d.status ?? cur.status });
 }
 
@@ -496,6 +500,7 @@ export async function adminCreateMerchant(req, env, user) {
     b.address ? str(b.address, { max: 200 }) : null, num(b.lat, { min: -90, max: 90, name: 'Latitude' }), num(b.lng, { min: -180, max: 180, name: 'Longitude' }),
     b.hours ? str(b.hours, { max: 60 }) : null, b.email ? str(b.email, { max: 200 }).toLowerCase() : null).first();
   if (m.contact_email) await linkMerchantUser(env, m);
+  await grantWelcome(env, m.id);
   return json({ merchant: m }, 201);
 }
 
@@ -518,7 +523,7 @@ export async function adminUpdateMerchant(req, env, user, id) {
   if (!keys.length) bad('Nothing to update');
   const m = await env.DB.prepare(`UPDATE merchants SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ? RETURNING *`).bind(...keys.map((k) => set[k]), id).first();
   if (!m) bad('Merchant not found', 404);
-  if (m.status === 'active') await linkMerchantUser(env, m);
+  if (m.status === 'active') { await linkMerchantUser(env, m); await grantWelcome(env, m.id); }
   return json({ merchant: m });
 }
 
@@ -604,9 +609,15 @@ export async function adminSettings(req, env, user) {
       dropPrice: ['drop_price_usd', { min: 0, max: 1000 }],
       claimHours: ['claim_hours', { min: 1, max: 168, int: true }],
       claimRadius: ['claim_radius_m', { min: 5, max: 5000, int: true }],
+      welcomeDrops: ['welcome_drops', { min: 0, max: 10000, int: true }],
     };
     const stmts = Object.entries(map).filter(([k]) => b[k] !== undefined)
       .map(([k, [key, opt]]) => env.DB.prepare('INSERT INTO settings(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').bind(key, String(num(b[k], { ...opt, name: k }))));
+    if (b.dropPacks !== undefined) {
+      if (!Array.isArray(b.dropPacks)) bad('Packs must be a list');
+      const packs = parsePacks(JSON.stringify(b.dropPacks));
+      stmts.push(env.DB.prepare('INSERT INTO settings(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').bind('drop_packs', JSON.stringify(packs)));
+    }
     if (stmts.length) await env.DB.batch(stmts);
   }
   return json({ settings: await getSettings(env.DB) });
