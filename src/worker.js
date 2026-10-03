@@ -5,6 +5,7 @@ import * as H from './hunt.js';
 import { askPolly, pollyTip } from './polly.js';
 import { runRaffle, raffleStatus, raffleDrawNow } from './raffle.js';
 import { payDrop, verifyCheckout, stripeWebhook } from './payments.js';
+import { syncTinMerchants, adminSyncTin } from './tin-sync.js';
 
 const routes = [
   ['POST', /^\/api\/auth\/register$/, (r, e) => register(r, e)],
@@ -53,6 +54,7 @@ const routes = [
   ['PUT', /^\/api\/admin\/settings$/, (r, e, u) => H.adminSettings(r, e, u)],
   ['GET', /^\/api\/admin\/raffle$/, (r, e, u) => raffleStatus(r, e, u)],
   ['POST', /^\/api\/admin\/raffle\/draw$/, (r, e, u) => raffleDrawNow(r, e, u)],
+  ['POST', /^\/api\/admin\/sync-tin$/, (r, e, u) => adminSyncTin(r, e, u)],
 ];
 
 const SECURITY_HEADERS = {
@@ -105,6 +107,7 @@ export default {
       ctx.waitUntil(runRaffle(env, "cron", lastRaffleAt(new Date(event.scheduledTime + 60000))).then((r) => console.log('raffle', JSON.stringify(r))));
     } else {
       ctx.waitUntil(H.expireClaims(env).then((n) => n && console.log('expired claims', n)));
+      ctx.waitUntil(syncTinMerchants(env).then((r) => console.log('tin sync', JSON.stringify(r))).catch((e) => console.error('tin sync', e.message)));
     }
   },
 };
