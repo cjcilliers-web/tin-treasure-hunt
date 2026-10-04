@@ -1,6 +1,6 @@
 // TIN Treasure Hunt — Cloudflare Worker entry point.
 import { HttpError, json, lastRaffleAt } from './lib.js';
-import { register, login, logout, currentUser, publicUser, requireRole } from './auth.js';
+import { register, login, logout, currentUser, publicUser, requireRole, tinSso } from './auth.js';
 import * as H from './hunt.js';
 import { askPolly, pollyTip } from './polly.js';
 import { runRaffle, raffleStatus, raffleDrawNow } from './raffle.js';
@@ -95,6 +95,7 @@ export default {
     const url = new URL(req.url);
     try {
       if (url.pathname.startsWith('/api/')) return withHeaders(await handleApi(req, env, url));
+      if (url.pathname === '/sso' && req.method === 'GET') return withHeaders(await tinSso(req, env, url));
       // Per-destination landing page (same login, same tin_users table).
       if (/^\/(cozumel)\/?$/.test(url.pathname)) {
         return withHeaders(await env.ASSETS.fetch(new Request(new URL('/destination', url), req)));

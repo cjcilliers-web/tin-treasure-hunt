@@ -119,3 +119,35 @@ export function requireRole(user, ...roles) {
   if (roles.length && !roles.includes(user.role)) bad('Not allowed', 403);
   return user;
 }
+
+// GET /sso?ticket=…  — single sign-on from the TIN User cockpit (tincommerce.com).
+// The ticket is one-time and short-lived; TIN confirms it server-to-server and returns the
+// verified email. The explorer is signed in here (account created on first visit) and sent to /app.
+export async function tinSso(req, env, url) {
+  const home = (q = '') => new Response(null, { status: 302, headers: { location: `/app${q}`, 'cache-control': 'no-store' } });
+  const ticket = url.searchParams.get('ticket') || '';
+  if (!/^[A-Za-z0-9_-]{30,64}$/.test(ticket)) return home();
+  const base = String(env.TIN_COMMERCE_URL || 'https://tincommerce.com').replace(/\/$/, '');
+  let who;
+  try {
+    const res = await fetch(`${base}/api/treasure-hunt-sso/verify`, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json' }, body: JSON.stringify({ ticket }) });
+    if (!res.ok) return home('?sso=expired');
+    who = await res.json();
+  } catch { return home('?sso=expired'); }
+  const email = String(who?.email || '').trim().toLowerCase();
+  if (!EMAIL_RE.test(email)) return home('?sso=expired');
+  let row = await env.DB.prepare('SELECT id FROM tin_users WHERE email = ?').bind(email).first();
+  if (!row) {
+    const admins = String(env.ADMIN_EMAILS || '').toLowerCase().split(',').map((s) => s.trim()).filter(Boolean);
+    // No password is known here; a random one is stored so the account can only be entered via TIN.
+    const { hash, salt, iter } = await hashPassword(b64(crypto.getRandomValues(new Uint8Array(24))));
+    const name = String(who?.name || email.split('@')[0]).slice(0, 80) || 'Explorer';
+    row = await env.DB.prepare(
+      `INSERT INTO tin_users(email, display_name, password_hash, password_salt, password_iter, role, home_destination)
+       VALUES (?,?,?,?,?,?,?) RETURNING id`
+    ).bind(email, name, hash, salt, iter, admins.includes(email) ? 'admin' : 'traveler', 'cozumel').first();
+    await env.DB.prepare('INSERT OR IGNORE INTO treasure_hunt_credits(user_id, balance) VALUES (?, 0)').bind(row.id).run();
+  }
+  const cookie = await startSession(env, req, row.id);
+  return new Response(null, { status: 302, headers: { location: '/app', 'set-cookie': cookie, 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' } });
+}
