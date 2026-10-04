@@ -237,6 +237,16 @@ function dropCard(d) {
     <span class="d">${fmtD(d.distanceM)}<small>${st}</small></span></button>`;
 }
 
+// Light street map (streets, ferry terminals, shops, landmarks) with a Satellite option
+// for finding an exact entrance or corner. Both are free with attribution.
+function addBaseLayers(map) {
+  const streets = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' });
+  const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Imagery &copy; Esri, Maxar, Earthstar Geographics' });
+  streets.addTo(map);
+  L.control.layers({ '🗺️ Streets': streets, '🛰️ Satellite': satellite }, null, { position: 'topright', collapsed: false }).addTo(map);
+  return streets;
+}
+
 let leafletMap = null;
 VIEWS.map = async (el) => {
   const data = await api(`/api/drops?destination=${S.dest.id}&radius=50000${hereQs()}`);
@@ -246,7 +256,7 @@ VIEWS.map = async (el) => {
   if (leafletMap) { leafletMap.remove(); leafletMap = null; }
   leafletMap = L.map('lmap', { zoomControl: true }).setView([S.here.lat, S.here.lng], 14);
   // OpenStreetMap tiles (no API key needed), darkened with CSS to match the app.
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, className: 'tin-tiles', attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' }).addTo(leafletMap);
+  addBaseLayers(leafletMap);
   if (S.locSource === 'gps') L.marker([S.here.lat, S.here.lng], { icon: L.divIcon({ className: '', html: '<div class="pinx me"></div>', iconSize: [16, 16] }) }).addTo(leafletMap);
   const pts = [];
   data.drops.forEach((d) => {
@@ -723,7 +733,7 @@ function placePicker(el, d) {
   const draw = () => {
     if (!window.L) { setTimeout(draw, 300); return; }
     map = L.map('pmap', { zoomControl: true }).setView([pin.lat, pin.lng], 16);
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, className: 'tin-tiles', attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' }).addTo(map);
+    addBaseLayers(map);
     if (Number.isFinite(biz.lat) && S.merchant) L.marker([biz.lat, biz.lng], { interactive: false, icon: L.divIcon({ className: '', html: '<div class="pinx biz">🏪</div>', iconSize: [26, 26] }) }).addTo(map);
     marker = L.marker([pin.lat, pin.lng], { draggable: true, autoPan: true, icon: L.divIcon({ className: '', html: `<div class="pinx drag">${esc($('#em')?.value || '🎁')}</div>`, iconSize: [40, 40], iconAnchor: [20, 20] }) }).addTo(map);
     marker.on('dragend', () => set(marker.getLatLng(), false));
@@ -863,7 +873,7 @@ VIEWS.mMsg = async (el) => {
     if (!window.L || !$('#smap')) { if ($('#smap')) setTimeout(draw, 300); return; }
     if (shieldMap) { shieldMap.remove(); shieldMap = null; }
     shieldMap = L.map('smap', { zoomControl: true }).setView([cur.lat, cur.lng], 17);
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, className: 'tin-tiles', attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' }).addTo(shieldMap);
+    addBaseLayers(shieldMap);
     L.marker([sh.business.lat, sh.business.lng], { interactive: false, icon: L.divIcon({ className: '', html: '<div class="pinx biz">🏪</div>', iconSize: [26, 26] }) }).addTo(shieldMap);
     circle = L.circle([cur.lat, cur.lng], { radius: cur.radius, color: '#f1c40f', weight: 2, fillOpacity: 0.15 }).addTo(shieldMap);
     centre = L.marker([cur.lat, cur.lng], { draggable: true, icon: L.divIcon({ className: '', html: '<div class="pinx drag">🛡️</div>', iconSize: [40, 40], iconAnchor: [20, 20] }) }).addTo(shieldMap);
