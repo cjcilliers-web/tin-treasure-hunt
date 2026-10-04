@@ -261,6 +261,11 @@ export async function askPolly(req, env, user) {
   const L = T[intent.lang] || T.en;
   const set = await getSettings(env.DB);
 
+  // Grand Treasure: Polly gives the progress and the clues that are open so far.
+  if (/\b(scooter|grand|clues?|pistas?|premio|gran tesoro|jackpot|pot|bote)\b/i.test(q)) {
+    const { grandForPolly } = await import('./grand.js');
+    return json({ reply: await grandForPolly(env, intent.lang === 'es' ? 'es' : 'en'), intent, grand: true });
+  }
   if (intent.askCredits) {
     if (!user) return json({ reply: L.signIn, intent });
     const bal = await env.DB.prepare('SELECT balance FROM treasure_hunt_credits WHERE user_id = ?').bind(user.id).first();

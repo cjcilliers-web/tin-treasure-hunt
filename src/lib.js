@@ -88,6 +88,10 @@ export async function getSettings(db) {
     welcomeDrops: Number(s.welcome_drops ?? 25),
     dropPacks: parsePacks(s.drop_packs),
     shieldMaxRadius: Number(s.shield_max_radius_m ?? 150),
+    videoPrice15: Number(s.video_price_15_cents ?? 10),
+    videoPrice30: Number(s.video_price_30_cents ?? 15),
+    videoPotShare: Number(s.video_pot_share_cents ?? 5),
+    videoDailyLimit: Number(s.video_daily_limit ?? 20),
   };
 }
 
