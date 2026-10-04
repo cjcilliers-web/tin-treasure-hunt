@@ -120,34 +120,59 @@ export function requireRole(user, ...roles) {
   return user;
 }
 
-// GET /sso?ticket=…  — single sign-on from the TIN User cockpit (tincommerce.com).
-// The ticket is one-time and short-lived; TIN confirms it server-to-server and returns the
-// verified email. The explorer is signed in here (account created on first visit) and sent to /app.
-export async function tinSso(req, env, url) {
-  const home = (q = '') => new Response(null, { status: 302, headers: { location: `/app${q}`, 'cache-control': 'no-store' } });
-  const ticket = url.searchParams.get('ticket') || '';
-  if (!/^[A-Za-z0-9_-]{30,64}$/.test(ticket)) return home();
+// Ask TIN Commerce to redeem a one-time ticket. purpose: 'user-sso' | 'merchant-sso' | 'merchant-summary'.
+export async function verifyTinTicket(env, ticket, purpose) {
+  if (!/^[A-Za-z0-9_-]{30,64}$/.test(String(ticket || ''))) return null;
   const base = String(env.TIN_COMMERCE_URL || 'https://tincommerce.com').replace(/\/$/, '');
-  let who;
   try {
-    const res = await fetch(`${base}/api/treasure-hunt-sso/verify`, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json' }, body: JSON.stringify({ ticket }) });
-    if (!res.ok) return home('?sso=expired');
-    who = await res.json();
-  } catch { return home('?sso=expired'); }
-  const email = String(who?.email || '').trim().toLowerCase();
-  if (!EMAIL_RE.test(email)) return home('?sso=expired');
-  let row = await env.DB.prepare('SELECT id FROM tin_users WHERE email = ?').bind(email).first();
+    const res = await fetch(`${base}/api/treasure-hunt-sso/verify`, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify(purpose === 'user-sso' ? { ticket } : { ticket, purpose }) });
+    return res.ok ? await res.json() : null;
+  } catch { return null; }
+}
+
+async function userForEmail(env, email, name, role) {
+  let row = await env.DB.prepare('SELECT id, role FROM tin_users WHERE email = ?').bind(email).first();
   if (!row) {
-    const admins = String(env.ADMIN_EMAILS || '').toLowerCase().split(',').map((s) => s.trim()).filter(Boolean);
-    // No password is known here; a random one is stored so the account can only be entered via TIN.
+    // No password is known here; a random one is stored so the account is entered via TIN.
     const { hash, salt, iter } = await hashPassword(b64(crypto.getRandomValues(new Uint8Array(24))));
-    const name = String(who?.name || email.split('@')[0]).slice(0, 80) || 'Explorer';
     row = await env.DB.prepare(
       `INSERT INTO tin_users(email, display_name, password_hash, password_salt, password_iter, role, home_destination)
-       VALUES (?,?,?,?,?,?,?) RETURNING id`
-    ).bind(email, name, hash, salt, iter, admins.includes(email) ? 'admin' : 'traveler', 'cozumel').first();
+       VALUES (?,?,?,?,?,?,?) RETURNING id, role`
+    ).bind(email, String(name || email.split('@')[0]).slice(0, 80) || 'Explorer', hash, salt, iter, role, 'cozumel').first();
     await env.DB.prepare('INSERT OR IGNORE INTO treasure_hunt_credits(user_id, balance) VALUES (?, 0)').bind(row.id).run();
   }
+  return row;
+}
+
+// GET /sso?ticket=…[&kind=merchant] — single sign-on from tincommerce.com.
+// Explorers come from the User cockpit; merchants (and TIN admins working in a merchant's
+// cockpit) come from the Merchant Cockpit and land in that merchant's Treasure Hunt view.
+export async function tinSso(req, env, url) {
+  const go = (to, cookie) => new Response(null, { status: 302, headers: { location: to, 'cache-control': 'no-store', 'referrer-policy': 'no-referrer', ...(cookie ? { 'set-cookie': cookie } : {}) } });
+  const merchantKind = url.searchParams.get('kind') === 'merchant';
+  const who = await verifyTinTicket(env, url.searchParams.get('ticket'), merchantKind ? 'merchant-sso' : 'user-sso');
+  if (!who) return go('/app?sso=expired');
+  const email = String(who.email || '').trim().toLowerCase();
+  if (!EMAIL_RE.test(email)) return go('/app?sso=expired');
+  const admins = String(env.ADMIN_EMAILS || '').toLowerCase().split(',').map((s) => s.trim()).filter(Boolean);
+  if (!merchantKind) {
+    const row = await userForEmail(env, email, who.name, admins.includes(email) ? 'admin' : 'traveler');
+    return go('/app', await startSession(env, req, row.id));
+  }
+  // Merchant sign-on: find this TIN merchant in the Treasure Hunt (sync it in if it was just switched on).
+  const tinId = Number(who.tinMerchantId);
+  let m = await env.DB.prepare('SELECT id FROM merchants WHERE tin_merchant_id = ?').bind(tinId).first();
+  if (!m) {
+    const { syncTinMerchants } = await import('./tin-sync.js');
+    await syncTinMerchants(env).catch(() => null);
+    m = await env.DB.prepare('SELECT id FROM merchants WHERE tin_merchant_id = ?').bind(tinId).first();
+  }
+  if (!m) return go('/app?sso=not-switched-on');
+  const isAdmin = who.admin === true || admins.includes(email);
+  const row = await userForEmail(env, email, who.name, isAdmin ? 'admin' : 'merchant');
+  if (isAdmin) await env.DB.prepare(`UPDATE tin_users SET role = 'admin' WHERE id = ?`).bind(row.id).run();
+  else if (row.role !== 'admin') await env.DB.prepare(`UPDATE tin_users SET role = 'merchant', merchant_id = ? WHERE id = ?`).bind(m.id, row.id).run();
   const cookie = await startSession(env, req, row.id);
-  return new Response(null, { status: 302, headers: { location: '/app', 'set-cookie': cookie, 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' } });
+  return go(isAdmin || row.role === 'admin' ? `/app?mode=merchant&merchant=${m.id}` : '/app?mode=merchant', cookie);
 }

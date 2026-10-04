@@ -94,6 +94,14 @@ async function boot() {
   const sw = $('#viewsw');
   const canMerchant = S.me.role === 'merchant' || S.me.role === 'admin';
   const canHq = S.me.role === 'admin';
+  // Arriving from the TIN Merchant Cockpit: open the merchant view (admins act as that merchant).
+  const wantMode = params.get('mode'), wantM = Number(params.get('merchant'));
+  if (wantMode === 'merchant' && canMerchant) {
+    S.mode = 'merchant'; saveUi();
+    if (canHq && wantM > 0) { S.merchantId = wantM; S.merchant = null; }
+    if (!params.get('paid') && !params.get('unpaid') && !params.get('credits') && !params.get('credits_cancel')) history.replaceState(null, '', location.pathname);
+  }
+  if (params.get('sso') === 'not-switched-on') toast('This business is not in the Treasure Hunt yet. Switch it on in your TIN Merchant Cockpit first.');
   $('[data-mode="merchant"]', sw).hidden = !canMerchant;
   $('[data-mode="hq"]', sw).hidden = !canHq;
   sw.hidden = !canMerchant;
