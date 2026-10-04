@@ -87,6 +87,7 @@ export async function getSettings(db) {
     claimRadius: Number(s.claim_radius_m ?? 10),
     welcomeDrops: Number(s.welcome_drops ?? 25),
     dropPacks: parsePacks(s.drop_packs),
+    shieldMaxRadius: Number(s.shield_max_radius_m ?? 150),
   };
 }
 

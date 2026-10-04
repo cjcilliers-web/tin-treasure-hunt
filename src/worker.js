@@ -7,6 +7,7 @@ import { runRaffle, raffleStatus, raffleDrawNow } from './raffle.js';
 import { payDrop, verifyCheckout, stripeWebhook } from './payments.js';
 import { syncTinMerchants, adminSyncTin } from './tin-sync.js';
 import { myDropCredits, buyCredits, verifyCreditsCheckout, adminGiveCredits } from './credits.js';
+import { getShield, saveShield, shieldCheck, listMessages, actOnMessage } from './shield.js';
 
 const routes = [
   ['POST', /^\/api\/auth\/register$/, (r, e) => register(r, e)],
@@ -41,6 +42,11 @@ const routes = [
   ['POST', /^\/api\/merchant\/credits\/checkout$/, (r, e, u) => buyCredits(r, e, u)],
   ['GET', /^\/api\/merchant\/credits\/checkout\/([A-Za-z0-9_]+)$/, (r, e, u, sid) => verifyCreditsCheckout(r, e, u, sid)],
   ['POST', /^\/api\/admin\/merchants\/(\d+)\/credits$/, (r, e, u, id) => adminGiveCredits(r, e, u, Number(id))],
+  ['GET', /^\/api\/merchant\/shield$/, (r, e, u) => getShield(r, e, u)],
+  ['PUT', /^\/api\/merchant\/shield$/, (r, e, u) => saveShield(r, e, u)],
+  ['GET', /^\/api\/merchant\/shield-check$/, (r, e, u) => shieldCheck(r, e, u)],
+  ['GET', /^\/api\/merchant\/messages$/, (r, e, u) => listMessages(r, e, u)],
+  ['POST', /^\/api\/merchant\/messages\/(\d+)\/act$/, (r, e, u, id) => actOnMessage(r, e, u, Number(id))],
   ['POST', /^\/api\/merchant\/lookup$/, (r, e, u) => H.lookupCode(r, e, u)],
   ['POST', /^\/api\/merchant\/confirm$/, (r, e, u) => H.confirmRedemption(r, e, u)],
   ['GET', /^\/api\/merchant\/stats$/, (r, e, u) => H.merchantStats(r, e, u)],

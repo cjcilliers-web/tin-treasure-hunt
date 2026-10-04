@@ -272,3 +272,10 @@ video.scan{width:100%;border-radius:12px;background:#000;aspect-ratio:1;object-f
 .pinx.drag{width:40px;height:40px;font-size:1.4rem;cursor:grab;box-shadow:0 0 0 4px rgba(241,196,15,.45),0 6px 14px rgba(0,0,0,.45)}
 .pinx.biz{width:26px;height:26px;font-size:.9rem;opacity:.85}
 
+/* Treasure Shield */
+.smap{height:300px}
+#nav button{position:relative}
+.badge{position:absolute;top:4px;right:calc(50% - 22px);min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--gold);color:#07100f;font-size:.7rem;font-weight:800;display:grid;place-items:center;line-height:1}
+.card.msg.open{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold)}
+.msgtext{line-height:1.45}
+
