@@ -57,13 +57,22 @@ function startLocation() {
   if (!navigator.geolocation) return;
   navigator.geolocation.watchPosition((p) => {
     const g = { lat: p.coords.latitude, lng: p.coords.longitude };
+    S.gps = g;
+    // Treasures can be dropped anywhere on earth, so we search around the explorer wherever they are.
+    // "Explore <town> instead" (S.browseTown) lets someone far away look at the destination.
+    if (S.browseTown) return;
     const far = haversine(g, center) > 40000;
-    if (far) { S.locSource = 'center'; setLoc(`Not in ${S.dest.name} yet · showing from town`); return; }
-    const moved = !S.here || haversine(g, S.here) > 40;
-    S.here = g; S.locSource = 'gps'; setLoc(`Your location · ${S.dest.name}`);
+    const moved = !S.here || S.locSource !== 'gps' || haversine(g, S.here) > 40;
+    S.here = g; S.locSource = 'gps'; setLoc(far ? 'Your location' : `Your location · ${S.dest.name}`);
     if (S.view === 'detail' && S.gate) S.gate();
     if (moved && S.mode === 'traveler' && ['hunt', 'map'].includes(S.view)) render();
   }, () => setLoc(`${S.dest.name} · town centre (location off)`), { enableHighAccuracy: true, maximumAge: 15000, timeout: 20000 });
+}
+function browseTown(on) {
+  S.browseTown = on;
+  if (on) { S.here = { lat: S.dest.lat, lng: S.dest.lng }; S.locSource = 'center'; setLoc(`Exploring ${S.dest.name} · town centre`); }
+  else if (S.gps) { S.here = S.gps; S.locSource = 'gps'; setLoc(haversine(S.gps, { lat: S.dest.lat, lng: S.dest.lng }) > 40000 ? 'Your location' : `Your location · ${S.dest.name}`); }
+  render();
 }
 function haversine(a, b) {
   const R = 6371e3, t = Math.PI / 180;
@@ -181,7 +190,10 @@ VIEWS.hunt = async (el) => {
   <div class="slider"><div class="lbl"><span>Search distance</span><b id="rv">${radLabel(S.radiusIdx)}</b></div>
     <input type="range" id="rad" min="0" max="${RADII.length - 1}" step="1" value="${S.radiusIdx}" aria-label="Search distance"></div>
   <div class="chips">${['All', ...CATS].map((c) => `<button class="chip" data-c="${c}" aria-pressed="${S.cat === c}">${c}</button>`).join('')}</div>
-  ${data.drops.length ? data.drops.map(dropCard).join('') : `<p class="empty">No treasures within ${radLabel(S.radiusIdx)}. Slide the distance wider or ask Polly.</p>`}`;
+  ${S.browseTown ? `<button class="sbtn" id="mine" style="justify-self:start">📍 Back to treasures near me</button>` : ''}
+  ${data.drops.length ? data.drops.map(dropCard).join('') : `<p class="empty">No treasures within ${radLabel(S.radiusIdx)}. Slide the distance wider or ask Polly.</p>${!S.browseTown && S.gps && haversine(S.gps, { lat: S.dest.lat, lng: S.dest.lng }) > 40000 ? `<button class="btn" id="town">🗺️ Explore ${esc(S.dest.name)}'s treasures instead</button>` : ''}`}`;
+  const tw = $('#town', el); if (tw) tw.onclick = () => browseTown(true);
+  const mn = $('#mine', el); if (mn) mn.onclick = () => browseTown(false);
   $('#rad', el).oninput = (e) => { $('#rv').textContent = radLabel(Number(e.target.value)); };
   $('#rad', el).onchange = (e) => { S.radiusIdx = Number(e.target.value); saveUi(); render(); };
   $$('[data-c]', el).forEach((b) => (b.onclick = () => { S.cat = S.cat === b.dataset.c && b.classList.contains('tt') ? 'All' : b.dataset.c; render(); }));
@@ -656,6 +668,60 @@ function wireCredits(el) {
   const f = $('#buyf', el); if (f) f.onsubmit = (e) => { e.preventDefault(); buy({ drops: Number(n.value) }, $('button', f)); };
 }
 
+// Reads "20.6296, -87.0739", "20.6296 -87.0739", "20.6296° N, 87.0739° W" or a Google Maps link.
+function parseCoords(text) {
+  const t = String(text || '').trim();
+  const at = t.match(/@(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/) || t.match(/[?&](?:q|query|ll)=(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/);
+  let lat, lng;
+  if (at) { lat = Number(at[1]); lng = Number(at[2]); }
+  else {
+    const m = t.match(/(-?\d+(?:\.\d+)?)\s*°?\s*([NSns])?[\s,;]+(-?\d+(?:\.\d+)?)\s*°?\s*([EWew])?/);
+    if (!m) return null;
+    lat = Number(m[1]) * (/[Ss]/.test(m[2] || '') ? -1 : 1);
+    lng = Number(m[3]) * (/[Ww]/.test(m[4] || '') ? -1 : 1);
+  }
+  return Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 ? { lat, lng } : null;
+}
+
+// Map in the treasure form: drag the pin, tap the map, paste coordinates, or jump to "here" / "my business".
+function placePicker(el, d) {
+  const biz = S.merchant && Number.isFinite(S.merchant.lat) ? { lat: S.merchant.lat, lng: S.merchant.lng } : { lat: S.dest.lat, lng: S.dest.lng };
+  let pin = d && Number.isFinite(d.lat) ? { lat: d.lat, lng: d.lng } : { ...biz };
+  let map = null, marker = null;
+  const info = $('#pinfo', el), input = $('#coords', el);
+  const show = (pan) => {
+    input.value = `${pin.lat.toFixed(6)}, ${pin.lng.toFixed(6)}`;
+    const away = haversine(biz, pin);
+    info.innerHTML = `${away < 15 ? '🏪 At your business.' : `📏 ${fmtD(Math.round(away))} from your business.`} <a href="https://www.google.com/maps?q=${pin.lat},${pin.lng}" target="_blank" rel="noopener">Check in Google Maps ↗</a>`;
+    if (marker) marker.setLatLng([pin.lat, pin.lng]);
+    if (map && pan) map.setView([pin.lat, pin.lng], Math.max(map.getZoom(), 16));
+  };
+  const set = (p, pan = true) => { pin = { lat: Number(p.lat), lng: Number(p.lng) }; $('#er').textContent = ''; show(pan); };
+  const jump = () => { const p = parseCoords(input.value); if (!p) { $('#er').textContent = 'Those coordinates were not understood. Use the format 20.6296, -87.0739.'; return; } set(p); };
+  $('#cgo', el).onclick = jump;
+  input.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); jump(); } };
+  input.onpaste = () => setTimeout(() => { if (parseCoords(input.value)) jump(); }, 0);
+  $('#pbiz', el).onclick = () => set(biz);
+  $('#pme', el).onclick = () => {
+    if (!navigator.geolocation) { $('#er').textContent = 'This device cannot share its location.'; return; }
+    navigator.geolocation.getCurrentPosition((p) => set({ lat: p.coords.latitude, lng: p.coords.longitude }),
+      () => { $('#er').textContent = 'Turn on location so we can place the treasure where you are.'; }, { enableHighAccuracy: true, timeout: 20000 });
+  };
+  const draw = () => {
+    if (!window.L) { setTimeout(draw, 300); return; }
+    map = L.map('pmap', { zoomControl: true }).setView([pin.lat, pin.lng], 16);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, className: 'tin-tiles', attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' }).addTo(map);
+    if (Number.isFinite(biz.lat) && S.merchant) L.marker([biz.lat, biz.lng], { interactive: false, icon: L.divIcon({ className: '', html: '<div class="pinx biz">🏪</div>', iconSize: [26, 26] }) }).addTo(map);
+    marker = L.marker([pin.lat, pin.lng], { draggable: true, autoPan: true, icon: L.divIcon({ className: '', html: `<div class="pinx drag">${esc($('#em')?.value || '🎁')}</div>`, iconSize: [40, 40], iconAnchor: [20, 20] }) }).addTo(map);
+    marker.on('dragend', () => set(marker.getLatLng(), false));
+    map.on('click', (e) => set(e.latlng, false));
+    const em = $('#em', el); if (em) em.addEventListener('change', () => marker.setIcon(L.divIcon({ className: '', html: `<div class="pinx drag">${esc(em.value)}</div>`, iconSize: [40, 40], iconAnchor: [20, 20] })));
+    setTimeout(() => map && map.invalidateSize(), 60);
+  };
+  show(false); draw();
+  return { get: () => pin };
+}
+
 function dropForm(el, d) {
   const edit = !!d;
   const price = S.settings.dropPrice ?? 1;
@@ -674,13 +740,19 @@ function dropForm(el, d) {
     <label>Walking distance note<input id="wd" maxlength="120" placeholder="e.g. 5 min walk from the ferry pier" value="${esc(d?.walkingNote || '')}"></label>
     <div class="two"><label style="flex-direction:row;display:flex;gap:6px;align-items:center"><input type="checkbox" id="kd" style="width:auto" ${d?.kids === false ? '' : 'checked'}> Kid-friendly</label>
       <label style="flex-direction:row;display:flex;gap:6px;align-items:center"><input type="checkbox" id="my" style="width:auto" ${d?.mystery ? 'checked' : ''}> Mystery reward</label></div>
-    <label style="flex-direction:row;display:flex;gap:6px;align-items:center"><input type="checkbox" id="gl" style="width:auto"> Treasure is where I'm standing now (otherwise at the business)</label>
+    <fieldset class="place"><legend>Where is the treasure hidden?</legend>
+      <p class="note">Drag the pin to the exact spot or tap the map. You can also paste coordinates, for example from Google Maps.</p>
+      <div class="row" style="gap:8px;flex-wrap:wrap"><input id="coords" inputmode="text" autocomplete="off" placeholder="e.g. 20.6296, -87.0739" aria-label="Coordinates: latitude, longitude" style="flex:1;min-width:180px"><button type="button" class="sbtn gold" id="cgo" style="flex:none">Go</button></div>
+      <div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="sbtn" id="pme">📍 Where I'm standing</button><button type="button" class="sbtn" id="pbiz">🏪 At my business</button></div>
+      <div class="lmap pmap" id="pmap" role="region" aria-label="Map: drag the pin to place the treasure"></div>
+      <p class="note" id="pinfo" role="status"></p>
+    </fieldset>
     <label>Your terms (optional)<textarea id="tm" maxlength="500" placeholder="e.g. Dine-in only. Not valid on public holidays.">${esc(d?.terms || '')}</textarea></label>
     <div class="photos" id="phs"></div>
     <label class="sbtn" style="justify-self:start;cursor:pointer">📷 Add photos (up to 4)<input type="file" accept="image/*" multiple hidden id="pf"></label>
-    ${edit ? '<p class="note">Changes to the name, reward, story or photo go back to TIN HQ for a quick review.</p>' : hq ? '<div class="sum"><span>Created by TIN HQ</span><b>Free</b></div>' : `<div class="sum"><span>Uses drop credits · you have ${have}</span><b id="tot">10</b></div>`}
+    ${edit ? '<p class="note">Changes to the name, reward, story, photo or location go back to TIN HQ for a quick review.</p>' : hq ? '<div class="sum"><span>Created by TIN HQ</span><b>Free</b></div>' : `<div class="sum"><span>Uses drop credits · you have ${have}</span><b id="tot">10</b></div>`}
     <div class="err" id="er"></div>
-    <button class="btn" type="submit">${edit ? 'Save changes' : 'Send to TIN HQ for approval'}</button>
+    <button class="btn" type="submit">${edit ? 'Save changes' : '🗝️ Drop treasure'}</button>${edit ? '' : '<p class="note">TIN HQ checks every treasure before explorers can find it.</p>'}
     ${edit || hq ? '' : `<p class="note" id="cnote">🎟️ Each drop uses 1 credit. If TIN HQ does not approve the treasure, your credits come back.</p><button type="button" class="sbtn gold" id="getmore" ${have >= 10 ? 'hidden' : ''}>Buy more drops</button>`}
   </form>`;
   // Gallery photos: start from the treasure's current photos when editing.
@@ -695,6 +767,7 @@ function dropForm(el, d) {
     }));
   };
   $('#bk', el).onclick = () => go('mList');
+  const place = placePicker(el, d);
   const qt = $('#qt', el); if (qt && !hq) qt.oninput = () => { const q = Number(qt.value) || 0; $('#tot').textContent = q; $('#getmore').hidden = q <= have; };
   const gm = $('#getmore', el); if (gm) gm.onclick = () => go('mList');
   drawPhotos();
@@ -708,7 +781,7 @@ function dropForm(el, d) {
     e.preventDefault();
     const body = { title: $('#tn').value, item: $('#it').value, story: $('#cl').value, category: $('#ct').value, emoji: $('#em').value, difficulty: $('#df').value, value: Number($('#vl').value || 0), walkingNote: $('#wd').value, kids: $('#kd').checked, mystery: $('#my').checked };
     if (!edit) body.quantity = Number($('#qt').value);
-    if ($('#gl').checked) { if (S.locSource !== 'gps') return ($('#er').textContent = 'Turn on location to place the treasure where you are.'); body.lat = S.here.lat; body.lng = S.here.lng; }
+    const pin = place.get(); body.lat = pin.lat; body.lng = pin.lng;
     if (photos) body.photos = photos;
     body.terms = $('#tm').value;
     const btn = $('button[type=submit]', el); btn.disabled = true;
@@ -881,8 +954,8 @@ function mapRows(rows) {
 HQ.drops = async (el) => {
   const { drops } = await api('/api/admin/drops');
   const pill = (s) => `<span class="pill ${s === 'active' ? 'live' : s === 'rejected' || s === 'expired' ? 'ended' : s}">${s === 'active' ? 'live' : s}</span>`;
-  el.innerHTML = `<div class="card"><h3>Treasure Drops</h3><div class="tbl"><table><thead><tr><th>Treasure</th><th>Merchant</th><th>Story</th><th>Status</th><th>Payment</th><th class="n">Left</th><th class="n">Redeemed</th><th class="n">Fee</th><th></th></tr></thead><tbody>
-  ${drops.map((d) => `<tr><td>${esc(d.emoji)} <b>${esc(d.title)}</b><div class="note">${esc(d.item)} · ${esc(d.category)} · ${esc(d.difficulty)}</div></td><td>${esc(d.merchant)}</td><td style="max-width:300px" class="note">${esc(d.story)}</td><td>${pill(d.status)}</td><td><span class="pill ${d.paymentStatus === 'unpaid' ? 'pending' : d.paymentStatus === 'paid' ? 'live' : 'draft'}">${d.paymentStatus}</span></td>
+  el.innerHTML = `<div class="card"><h3>Treasure Drops</h3><div class="tbl"><table><thead><tr><th>Treasure</th><th>Merchant</th><th>Where</th><th>Story</th><th>Status</th><th>Payment</th><th class="n">Left</th><th class="n">Redeemed</th><th class="n">Fee</th><th></th></tr></thead><tbody>
+  ${drops.map((d) => `<tr><td>${esc(d.emoji)} <b>${esc(d.title)}</b><div class="note">${esc(d.item)} · ${esc(d.category)} · ${esc(d.difficulty)}</div></td><td>${esc(d.merchant)}</td><td><a href="https://www.google.com/maps?q=${d.lat},${d.lng}" target="_blank" rel="noopener">📍 Map ↗</a><div class="note">${d.fromBusinessM == null ? '' : d.fromBusinessM < 15 ? 'At the business' : `${fmtD(d.fromBusinessM)} from the business`}</div></td><td style="max-width:300px" class="note">${esc(d.story)}</td><td>${pill(d.status)}</td><td><span class="pill ${d.paymentStatus === 'unpaid' ? 'pending' : d.paymentStatus === 'paid' ? 'live' : 'draft'}">${d.paymentStatus}</span></td>
     <td class="n">${d.remaining}/${d.quantity}</td><td class="n">${d.redeemed}</td><td class="n">$${d.fee}</td>
     <td>${d.status === 'pending' && d.paymentStatus === 'unpaid' ? `<button class="sbtn" data-waive="${d.id}">Waive fee &amp; approve</button> ` : ''}${d.status === 'pending' && d.paymentStatus !== 'unpaid' ? `<button class="sbtn go" data-s="active" data-id="${d.id}">Approve</button> <button class="sbtn stop" data-s="rejected" data-id="${d.id}">Reject</button>` : d.status === 'pending' ? `<button class="sbtn stop" data-s="rejected" data-id="${d.id}">Reject</button>` : d.status === 'active' ? `<button class="sbtn stop" data-s="paused" data-id="${d.id}">Pause</button>` : d.status === 'paused' ? `<button class="sbtn go" data-s="active" data-id="${d.id}">Resume</button>` : ''}</td></tr>`).join('')}
   </tbody></table></div></div>`;

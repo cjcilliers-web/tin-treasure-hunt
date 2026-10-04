@@ -13,7 +13,7 @@ const DROP_COLS = `
   d.id, d.title, d.item, d.category, d.emoji, d.story_text, d.gps_lat, d.gps_lng, d.walking_distance,
   d.difficulty, d.reward_value_usd, d.is_mystery, d.kid_friendly, d.quantity, d.remaining, (SELECT COUNT(*) FROM drop_photos p WHERE p.drop_id = d.id) AS photo_count, d.terms, m.logo IS NOT NULL AS has_logo,
   d.status, d.created_at, d.destination_id, d.merchant_id, d.payment_status, d.fee_usd,
-  m.name AS merchant, m.hours, m.category AS merchant_category, m.address,
+  m.name AS merchant, m.hours, m.category AS merchant_category, m.address, m.lat AS biz_lat, m.lng AS biz_lng,
   (SELECT ROUND(AVG(r.overall_score), 1) FROM redemption_ratings r JOIN redemptions x ON x.id = r.redemption_id WHERE x.merchant_id = m.id) AS rating,
   (SELECT COUNT(*) FROM redemption_ratings r JOIN redemptions x ON x.id = r.redemption_id WHERE x.merchant_id = m.id) AS rating_count`;
 
@@ -27,16 +27,26 @@ export function shapeDrop(r, here, { revealMystery = false } = {}) {
     hasPhoto: r.photo_count > 0, photoCount: r.photo_count, hasLogo: !!r.has_logo, terms: r.terms, status: r.status, paymentStatus: r.payment_status, fee: r.fee_usd, merchant: r.merchant, merchantId: r.merchant_id,
     hours: r.hours, rating: r.rating, ratingCount: r.rating_count, destination: r.destination_id,
     distanceM: m, walkMin: m == null ? null : walkMin(m),
+    fromBusinessM: Number.isFinite(r.biz_lat) && Number.isFinite(r.biz_lng) ? distanceM(r.biz_lat, r.biz_lng, r.gps_lat, r.gps_lng) : null,
   };
 }
 
-export async function liveDrops(env, destination, here) {
+// Live drops near a point, anywhere on earth. A merchant can drop a treasure at any GPS spot
+// (a ferry terminal, a corner of 5th Avenue), so we search by distance, not by destination.
+// The destination argument is kept for callers but no longer limits the results.
+export async function liveDrops(env, _destination, here, radiusM = 50_000) {
+  const dLat = radiusM / 111_320;
+  const cos = Math.max(Math.cos((here.lat * Math.PI) / 180), 0.01);
+  const dLng = Math.min(radiusM / (111_320 * cos), 180);
   const { results } = await env.DB.prepare(
     `SELECT ${DROP_COLS} FROM treasure_drops d JOIN merchants m ON m.id = d.merchant_id
-      WHERE d.destination_id = ? AND d.status = 'active' AND m.status = 'active' AND d.remaining > 0
-        AND (d.expires_at IS NULL OR d.expires_at > ?)`
-  ).bind(destination, nowIso()).all();
-  return results.map((r) => shapeDrop(r, here)).sort((a, b) => (a.distanceM ?? 0) - (b.distanceM ?? 0));
+      WHERE d.status = 'active' AND m.status = 'active' AND d.remaining > 0
+        AND (d.expires_at IS NULL OR d.expires_at > ?)
+        AND d.gps_lat BETWEEN ? AND ? AND d.gps_lng BETWEEN ? AND ?`
+  ).bind(nowIso(), here.lat - dLat, here.lat + dLat, here.lng - dLng, here.lng + dLng).all();
+  return results.map((r) => shapeDrop(r, here))
+    .filter((d) => d.distanceM <= radiusM)
+    .sort((a, b) => (a.distanceM ?? 0) - (b.distanceM ?? 0));
 }
 
 function readHere(url, dest) {
@@ -67,7 +77,7 @@ export async function listDrops(req, env, user) {
   const here = readHere(url, dest);
   const radius = num(url.searchParams.get('radius') ?? 5000, { min: 50, max: 50_000, name: 'radius' });
   const cat = url.searchParams.get('category');
-  let drops = await liveDrops(env, dest.id, here);
+  let drops = await liveDrops(env, dest.id, here, radius);
   const counts = Object.fromEntries(CATEGORIES.map((c) => [c, 0]));
   drops.forEach((d) => { if (d.distanceM <= radius) counts[d.category]++; });
   drops = drops.filter((d) => d.distanceM <= radius && (!cat || cat === 'All' || d.category === cat));
@@ -296,6 +306,7 @@ export async function createDrop(req, env, user) {
   if (!m || !['active'].includes(m.status)) bad('Your merchant account is not active yet');
   const b = await body(req, 1_000_000);
   const d = dropInput(b);
+  if ((d.gps_lat === undefined) !== (d.gps_lng === undefined)) bad('Please give both latitude and longitude for the treasure, or leave both empty to use your business location.');
   const quantity = num(b.quantity, { min: 1, max: 1000, int: true, name: 'How many drops' });
   const photos = await validPhotos(b);
   const terms = b.terms ? str(b.terms, { max: 500, name: 'Terms' }) : null;
@@ -348,7 +359,11 @@ export async function updateDrop(req, env, user, id) {
   }
   // Content edits on a live drop go back to HQ for review.
   const contentKeys = ['title', 'item', 'story_text', 'terms'];
-  if (user.role !== 'admin' && cur.status === 'active' && (photos || contentKeys.some((k) => d[k] !== undefined && d[k] !== cur[k]))) d.status = 'pending';
+  if ((d.gps_lat === undefined) !== (d.gps_lng === undefined)) bad('Please give both latitude and longitude for the treasure.');
+  const moved = d.gps_lat !== undefined && distanceM(d.gps_lat, d.gps_lng, cur.gps_lat, cur.gps_lng) > 2;
+  if (d.gps_lat !== undefined && !moved) { delete d.gps_lat; delete d.gps_lng; }
+  if (user.role !== 'admin' && moved && cur.status === 'paused') d.status = 'pending';
+  if (user.role !== 'admin' && cur.status === 'active' && (photos || moved || contentKeys.some((k) => d[k] !== undefined && d[k] !== cur[k]))) d.status = 'pending';
   if (photos) await savePhotos(env, id, photos);
   Object.keys(d).forEach((k) => d[k] === undefined && delete d[k]);
   const keys = Object.keys(d);

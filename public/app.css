@@ -264,3 +264,11 @@ video.scan{width:100%;border-radius:12px;background:#000;aspect-ratio:1;object-f
 .pwtog{position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:0;color:var(--gold-hi);cursor:pointer;font-size:.8rem;padding:6px 8px}
 
 .tin-tiles{filter:invert(1) hue-rotate(180deg) brightness(.9) contrast(.9) saturate(.6)}
+
+/* Treasure placement map in the drop form */
+.place{border:1px solid var(--line);border-radius:16px;padding:14px;display:grid;gap:10px;margin:0}
+.place legend{padding:0 6px;font-weight:700}
+.pmap{height:340px}
+.pinx.drag{width:40px;height:40px;font-size:1.4rem;cursor:grab;box-shadow:0 0 0 4px rgba(241,196,15,.45),0 6px 14px rgba(0,0,0,.45)}
+.pinx.biz{width:26px;height:26px;font-size:.9rem;opacity:.85}
+
