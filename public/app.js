@@ -24,6 +24,7 @@ const ICON = {
   scan: '<path d="M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4M7 12h10" fill="none" stroke="currentColor" stroke-width="1.6"/>',
   list: '<path d="M5 6h14M5 12h14M5 18h9" stroke="currentColor" stroke-width="1.6"/>',
   stats: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2" fill="none" stroke="currentColor" stroke-width="1.6"/>',
+  shield: '<path d="M12 3l7 3v6c0 4.4-3 7.6-7 9-4-1.4-7-4.6-7-9V6z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.6"/>',
   star: '<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>',
 };
 const ico = (n) => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICON[n]}</svg>`;
@@ -142,7 +143,7 @@ function setMode(m, first) {
 
 const NAVS = {
   traveler: [['hunt', 'Hunt', 'hunt'], ['map', 'Map', 'map'], ['polly', 'Polly', 'polly'], ['claims', 'My codes', 'claims'], ['wallet', 'Credits', 'wallet']],
-  merchant: [['mScan', 'Redeem', 'scan'], ['mList', 'Drops', 'list'], ['mStats', 'Today', 'stats'], ['mStars', 'Ratings', 'star']],
+  merchant: [['mScan', 'Redeem', 'scan'], ['mList', 'Drops', 'list'], ['mMsg', 'Shield', 'shield'], ['mStats', 'Today', 'stats'], ['mStars', 'Ratings', 'star']],
 };
 
 function go(view, arg = null) {
@@ -157,7 +158,7 @@ function render() {
   const navEl = $('#nav');
   navEl.style.gridTemplateColumns = `repeat(${nav.length},1fr)`;
   const active = { detail: 'hunt', qr: 'claims', rate: 'claims', mNew: 'mList', mEdit: 'mList', account: 'wallet' }[S.view] || S.view;
-  navEl.innerHTML = nav.map(([v, l, i]) => `<button data-go="${v}" ${v === active ? 'aria-current="page"' : ''}>${ico(i)}${l}</button>`).join('');
+  navEl.innerHTML = nav.map(([v, l, i]) => `<button data-go="${v}" ${v === active ? 'aria-current="page"' : ''}>${ico(i)}${l}${v === 'mMsg' && S.msgBadge ? `<span class="badge" aria-label="${S.msgBadge} new">${S.msgBadge}</span>` : ''}</button>`).join('');
   $$('#nav [data-go]').forEach((b) => (b.onclick = () => go(b.dataset.go)));
   // Each render gets a fresh pane, so a slow earlier view can never overwrite a newer one.
   const screen = $('#screen');
@@ -522,6 +523,7 @@ async function merchantGuard(el) {
   }
   if (!S.merchant || S.merchant.id !== (S.merchantId || S.me.merchantId)) { const r = await api(`/api/merchant/me${mq()}`); S.merchant = r.merchant; S.payments = r.payments; S.settings.dropPrice = r.dropPrice; S.packs = r.packs || []; S.credits = r.credits ?? 0; S.ledger = r.ledger || []; }
   setLoc(`Merchant · ${S.merchant.name}`);
+  refreshMsgBadge();
   return true;
 }
 
@@ -624,14 +626,14 @@ function shrink(file, max, q) {
 VIEWS.mList = async (el) => {
   if (!(await merchantGuard(el))) return;
   const { drops } = await api(`/api/merchant/drops${mq()}`);
-  const pill = (s) => `<span class="pill ${s === 'active' ? 'live' : s}">${s === 'active' ? 'live' : s}</span>`;
+  const pill = (s, d) => d?.blocked ? '<span class="pill ended">🛡️ blocked</span>' : `<span class="pill ${s === 'active' ? 'live' : s}">${s === 'active' ? 'live' : s}</span>`;
   el.innerHTML = `<div class="card" style="gap:10px"><div style="display:flex;gap:12px;align-items:center">
       ${S.merchant.has_logo ? `<img class="cp-logo" src="/api/merchants/${S.merchant.id}/logo?v=${Date.now()}" alt="Your logo">` : `<span class="cp-logo cp-mono">${esc(initials(S.merchant.name))}</span>`}
       <div><b>${esc(S.merchant.name)}</b><div class="note">Your logo appears on every treasure coupon.</div></div></div>
       <label class="sbtn" style="justify-self:start;cursor:pointer">${S.merchant.has_logo ? 'Change logo' : 'Upload logo'}<input type="file" accept="image/*" hidden id="lg"></label></div>
   ${creditsCard()}
   <button class="btn" id="nd">＋ Create a new treasure</button>
-  ${drops.length ? drops.map((d) => `<div class="card" style="gap:8px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b>${esc(d.emoji)} ${esc(d.title)}</b>${pill(d.status)}</div>
+  ${drops.length ? drops.map((d) => `<div class="card" style="gap:8px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b>${esc(d.emoji)} ${esc(d.title)}</b>${pill(d.status, d)}</div>
     <div class="note">${esc(d.item)} · ${d.remaining}/${d.quantity} left · ${d.redeemed} redeemed · ${d.waiting} waiting</div>
     ${d.paymentStatus === 'unpaid' ? `<div class="note" style="color:var(--warn)">💳 $${d.fee} to pay before TIN HQ can approve</div>` : d.paymentStatus === 'paid' ? '<div class="note" style="color:var(--ok)">💳 Paid</div>' : ''}
     <div class="row">${d.paymentStatus === 'unpaid' ? `<button class="sbtn gold" data-pay="${d.id}">Pay $${d.fee}</button>` : ''}${d.status === 'active' ? `<button class="sbtn stop" data-p="${d.id}">Pause</button>` : d.status === 'paused' ? `<button class="sbtn go" data-r="${d.id}">Resume</button>` : ''}<button class="sbtn" data-e="${d.id}">Edit</button></div></div>`).join('')
@@ -687,7 +689,7 @@ function parseCoords(text) {
 function placePicker(el, d) {
   const biz = S.merchant && Number.isFinite(S.merchant.lat) ? { lat: S.merchant.lat, lng: S.merchant.lng } : { lat: S.dest.lat, lng: S.dest.lng };
   let pin = d && Number.isFinite(d.lat) ? { lat: d.lat, lng: d.lng } : { ...biz };
-  let map = null, marker = null;
+  let map = null, marker = null, warnT = null;
   const info = $('#pinfo', el), input = $('#coords', el);
   const show = (pan) => {
     input.value = `${pin.lat.toFixed(6)}, ${pin.lng.toFixed(6)}`;
@@ -695,6 +697,9 @@ function placePicker(el, d) {
     info.innerHTML = `${away < 15 ? '🏪 At your business.' : `📏 ${fmtD(Math.round(away))} from your business.`} <a href="https://www.google.com/maps?q=${pin.lat},${pin.lng}" target="_blank" rel="noopener">Check in Google Maps ↗</a>`;
     if (marker) marker.setLatLng([pin.lat, pin.lng]);
     if (map && pan) map.setView([pin.lat, pin.lng], Math.max(map.getZoom(), 16));
+    clearTimeout(warnT); warnT = setTimeout(async () => {
+      try { const r = await api(`/api/merchant/shield-check?lat=${pin.lat}&lng=${pin.lng}${mq().replace('?', '&')}`); const w = $('#pwarn', el); if (w) w.hidden = !r.inside; } catch {}
+    }, 400);
   };
   const set = (p, pan = true) => { pin = { lat: Number(p.lat), lng: Number(p.lng) }; $('#er').textContent = ''; show(pan); };
   const jump = () => { const p = parseCoords(input.value); if (!p) { $('#er').textContent = 'Those coordinates were not understood. Use the format 20.6296, -87.0739.'; return; } set(p); };
@@ -746,6 +751,7 @@ function dropForm(el, d) {
       <div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="sbtn" id="pme">📍 Where I'm standing</button><button type="button" class="sbtn" id="pbiz">🏪 At my business</button></div>
       <div class="lmap pmap" id="pmap" role="region" aria-label="Map: drag the pin to place the treasure"></div>
       <p class="note" id="pinfo" role="status"></p>
+      <p class="note" id="pwarn" hidden style="color:var(--warn)">🛡️ This spot is inside another business's Treasure Shield. They will be told when your treasure goes live and may block it. If they do, your unused drop credits come back.</p>
     </fieldset>
     <label>Your terms (optional)<textarea id="tm" maxlength="500" placeholder="e.g. Dine-in only. Not valid on public holidays.">${esc(d?.terms || '')}</textarea></label>
     <div class="photos" id="phs"></div>
@@ -798,6 +804,88 @@ function dropForm(el, d) {
 }
 VIEWS.mNew = async (el) => { if (await merchantGuard(el)) dropForm(el, null); };
 VIEWS.mEdit = async (el, d) => { if (await merchantGuard(el)) dropForm(el, d); };
+
+/* ---------- Treasure Shield & merchant messages ---------- */
+async function refreshMsgBadge() {
+  try {
+    const r = await api(`/api/merchant/messages?peek=1${mq().replace('?', '&')}`);
+    const n = r.unread || r.open;
+    if (n === S.msgBadge) return;
+    S.msgBadge = n;
+    const b = $('#nav [data-go="mMsg"]'); if (!b) return;
+    b.querySelector('.badge')?.remove();
+    if (n) b.insertAdjacentHTML('beforeend', `<span class="badge" aria-label="${n} new">${n}</span>`);
+  } catch {}
+}
+
+function msgCard(m) {
+  const when = new Date(m.created_at).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  const where = m.drop_lat != null ? `<a href="https://www.google.com/maps?q=${m.drop_lat},${m.drop_lng}" target="_blank" rel="noopener">📍 See where it is ↗</a>` : '';
+  const open = m.kind === 'shield_alert' && m.state === 'open';
+  const done = m.kind === 'shield_alert' ? { left: '✅ You left it.', blocked: '🛡️ You blocked it.', closed: 'Closed: the treasure moved, ended, or your shield was off.' }[m.state] : '';
+  return `<div class="card msg${open ? ' open' : ''}" style="gap:8px">
+    <div class="note">${esc(when)}${m.read_at ? '' : ' · <b style="color:var(--gold)">New</b>'}</div>
+    <div class="msgtext">${esc(m.body)}</div>${where}
+    ${open ? `<div class="row"><button class="sbtn" data-act="leave" data-id="${m.id}">Leave it</button><button class="sbtn stop" data-act="block" data-id="${m.id}">🛡️ Block it</button></div>` : done ? `<div class="note">${done}</div>` : ''}</div>`;
+}
+
+let shieldMap = null;
+VIEWS.mMsg = async (el) => {
+  if (!(await merchantGuard(el))) return;
+  const [sh, ms] = await Promise.all([api(`/api/merchant/shield${mq()}`), api(`/api/merchant/messages${mq()}`)]);
+  S.msgBadge = -1; refreshMsgBadge();
+  const cur = sh.shield ? { ...sh.shield } : { lat: sh.business.lat, lng: sh.business.lng, radius: Math.min(50, sh.maxRadius), active: false };
+  el.innerHTML = `<div class="card" style="gap:10px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h3 style="margin:0">🛡️ Treasure Shield</h3><span class="pill ${sh.shield?.active ? 'live' : 'draft'}">${sh.shield?.active ? 'on' : sh.shield ? 'off' : 'not set up'}</span></div>
+    <p class="note">Protect your place. When another business's treasure goes live inside your shield, you get a message here and choose: leave it or block it.</p>
+    <label style="flex-direction:row;display:flex;gap:8px;align-items:center"><input type="checkbox" id="shon" style="width:auto" ${cur.active || !sh.shield ? 'checked' : ''}> Shield on</label>
+    <div class="slider"><div class="lbl"><span>Shield size</span><b id="shrv">${cur.radius} m</b></div>
+      <input type="range" id="shr" min="10" max="${sh.maxRadius}" step="5" value="${cur.radius}" aria-label="Shield size in metres"></div>
+    <div class="lmap smap" id="smap" role="region" aria-label="Map of your shield"></div>
+    <p class="note">Drag the 🛡️ to move the centre, up to ${sh.maxCentreFromBusiness} m from your business. The largest shield is ${sh.maxRadius} m.</p>
+    <div class="err" id="sher"></div>
+    <button class="btn" id="shsave">${sh.shield ? 'Save shield' : '🛡️ Switch on my shield'}</button></div>`;
+  const inbox = `<h3 style="margin:8px 2px 0">Messages</h3>
+  ${ms.messages.length ? ms.messages.map(msgCard).join('') : '<p class="empty">No messages yet. You will be told here when a treasure lands inside your shield, or if one of your treasures is blocked.</p>'}`;
+  // Alerts waiting for an answer go first; otherwise the shield settings lead.
+  if (ms.open) el.insertAdjacentHTML('afterbegin', inbox); else el.insertAdjacentHTML('beforeend', inbox);
+  const r = $('#shr', el), rv = $('#shrv', el);
+  let circle = null, centre = null;
+  const draw = () => {
+    if (!window.L || !$('#smap')) { if ($('#smap')) setTimeout(draw, 300); return; }
+    if (shieldMap) { shieldMap.remove(); shieldMap = null; }
+    shieldMap = L.map('smap', { zoomControl: true }).setView([cur.lat, cur.lng], 17);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, className: 'tin-tiles', attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' }).addTo(shieldMap);
+    L.marker([sh.business.lat, sh.business.lng], { interactive: false, icon: L.divIcon({ className: '', html: '<div class="pinx biz">🏪</div>', iconSize: [26, 26] }) }).addTo(shieldMap);
+    circle = L.circle([cur.lat, cur.lng], { radius: cur.radius, color: '#f1c40f', weight: 2, fillOpacity: 0.15 }).addTo(shieldMap);
+    centre = L.marker([cur.lat, cur.lng], { draggable: true, icon: L.divIcon({ className: '', html: '<div class="pinx drag">🛡️</div>', iconSize: [40, 40], iconAnchor: [20, 20] }) }).addTo(shieldMap);
+    centre.on('drag', () => circle.setLatLng(centre.getLatLng()));
+    centre.on('dragend', () => { const p = centre.getLatLng(); cur.lat = p.lat; cur.lng = p.lng; });
+    shieldMap.fitBounds(circle.getBounds(), { padding: [24, 24] });
+    setTimeout(() => shieldMap && shieldMap.invalidateSize(), 60);
+  };
+  draw();
+  r.oninput = () => { cur.radius = Number(r.value); rv.textContent = `${cur.radius} m`; if (circle) circle.setRadius(cur.radius); };
+  r.onchange = () => { if (circle && shieldMap) shieldMap.fitBounds(circle.getBounds(), { padding: [24, 24] }); };
+  $('#shsave', el).onclick = async (e) => {
+    e.target.disabled = true; $('#sher').textContent = '';
+    try {
+      const res = await api(`/api/merchant/shield${mq()}`, { method: 'PUT', body: { active: $('#shon').checked, radius: cur.radius, lat: cur.lat, lng: cur.lng } });
+      toast(res.shield.active ? `Shield on · ${res.shield.radius} m${res.alerts ? ` · ${res.alerts} treasure${res.alerts === 1 ? '' : 's'} already inside, see Messages` : ''}` : 'Shield switched off');
+      render();
+    } catch (err) { $('#sher').textContent = err.message; e.target.disabled = false; }
+  };
+  $$('[data-act]', el).forEach((b) => (b.onclick = async () => {
+    const block = b.dataset.act === 'block';
+    if (block && !confirm('Block this treasure? It will be taken down and the other business will be told.')) return;
+    b.disabled = true;
+    try {
+      const res = await api(`/api/merchant/messages/${b.dataset.id}/act${mq()}`, { method: 'POST', body: { action: b.dataset.act } });
+      toast(res.note || (res.state === 'blocked' ? 'Blocked. The treasure is no longer shown.' : 'OK, the treasure stays.'));
+      render();
+    } catch (err) { toast(err.message); b.disabled = false; }
+  }));
+};
 
 VIEWS.mStats = async (el) => {
   if (!(await merchantGuard(el))) return;
@@ -955,7 +1043,7 @@ HQ.drops = async (el) => {
   const { drops } = await api('/api/admin/drops');
   const pill = (s) => `<span class="pill ${s === 'active' ? 'live' : s === 'rejected' || s === 'expired' ? 'ended' : s}">${s === 'active' ? 'live' : s}</span>`;
   el.innerHTML = `<div class="card"><h3>Treasure Drops</h3><div class="tbl"><table><thead><tr><th>Treasure</th><th>Merchant</th><th>Where</th><th>Story</th><th>Status</th><th>Payment</th><th class="n">Left</th><th class="n">Redeemed</th><th class="n">Fee</th><th></th></tr></thead><tbody>
-  ${drops.map((d) => `<tr><td>${esc(d.emoji)} <b>${esc(d.title)}</b><div class="note">${esc(d.item)} · ${esc(d.category)} · ${esc(d.difficulty)}</div></td><td>${esc(d.merchant)}</td><td><a href="https://www.google.com/maps?q=${d.lat},${d.lng}" target="_blank" rel="noopener">📍 Map ↗</a><div class="note">${d.fromBusinessM == null ? '' : d.fromBusinessM < 15 ? 'At the business' : `${fmtD(d.fromBusinessM)} from the business`}</div></td><td style="max-width:300px" class="note">${esc(d.story)}</td><td>${pill(d.status)}</td><td><span class="pill ${d.paymentStatus === 'unpaid' ? 'pending' : d.paymentStatus === 'paid' ? 'live' : 'draft'}">${d.paymentStatus}</span></td>
+  ${drops.map((d) => `<tr><td>${esc(d.emoji)} <b>${esc(d.title)}</b><div class="note">${esc(d.item)} · ${esc(d.category)} · ${esc(d.difficulty)}</div></td><td>${esc(d.merchant)}</td><td><a href="https://www.google.com/maps?q=${d.lat},${d.lng}" target="_blank" rel="noopener">📍 Map ↗</a><div class="note">${d.fromBusinessM == null ? '' : d.fromBusinessM < 15 ? 'At the business' : `${fmtD(d.fromBusinessM)} from the business`}</div></td><td style="max-width:300px" class="note">${esc(d.story)}</td><td>${d.blocked ? '<span class="pill ended">🛡️ blocked</span>' : pill(d.status)}</td><td><span class="pill ${d.paymentStatus === 'unpaid' ? 'pending' : d.paymentStatus === 'paid' ? 'live' : 'draft'}">${d.paymentStatus}</span></td>
     <td class="n">${d.remaining}/${d.quantity}</td><td class="n">${d.redeemed}</td><td class="n">$${d.fee}</td>
     <td>${d.status === 'pending' && d.paymentStatus === 'unpaid' ? `<button class="sbtn" data-waive="${d.id}">Waive fee &amp; approve</button> ` : ''}${d.status === 'pending' && d.paymentStatus !== 'unpaid' ? `<button class="sbtn go" data-s="active" data-id="${d.id}">Approve</button> <button class="sbtn stop" data-s="rejected" data-id="${d.id}">Reject</button>` : d.status === 'pending' ? `<button class="sbtn stop" data-s="rejected" data-id="${d.id}">Reject</button>` : d.status === 'active' ? `<button class="sbtn stop" data-s="paused" data-id="${d.id}">Pause</button>` : d.status === 'paused' ? `<button class="sbtn go" data-s="active" data-id="${d.id}">Resume</button>` : ''}</td></tr>`).join('')}
   </tbody></table></div></div>`;
@@ -996,6 +1084,7 @@ HQ.settings = async (el) => {
     <label>Raffle prize (credits)<input name="rafflePrize" type="number" min="0" value="${s.rafflePrize}"></label>
     <label>Price per single drop (USD)<input name="dropPrice" type="number" min="0" step="0.01" value="${s.dropPrice}"></label>
     <label>Free welcome drops for each new merchant<input name="welcomeDrops" type="number" min="0" max="10000" value="${s.welcomeDrops ?? 25}"></label>
+    <label>Largest Treasure Shield a merchant can set (metres)<input name="shieldMaxRadius" type="number" min="10" max="2000" value="${s.shieldMaxRadius ?? 150}"></label>
     <fieldset style="grid-column:1/-1;border:1px solid var(--line);border-radius:10px;padding:10px"><legend class="note">Drop packs (leave a row empty to remove it)</legend>
       ${[0, 1, 2, 3].map((i) => { const p = (s.dropPacks || [])[i] || {}; return `<div class="row" style="gap:8px;align-items:center;margin:4px 0"><input name="pd${i}" type="number" min="1" placeholder="Drops" value="${p.drops ?? ''}" style="width:110px" aria-label="Pack ${i + 1} drops"><span class="note">drops for US$</span><input name="pu${i}" type="number" min="0.5" step="0.01" placeholder="Price" value="${p.usd ?? ''}" style="width:110px" aria-label="Pack ${i + 1} price"></div>`; }).join('')}
       <p class="note">Example: 100 drops for US$10 = 10 cents a drop. The minimum card payment is US$0.50.</p></fieldset>

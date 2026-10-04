@@ -6,13 +6,14 @@ import {
 import { requireRole } from './auth.js';
 import { stripeEnabled, startCheckout } from './payments.js';
 import { spendCredits, changeCredits, grantWelcome, creditsInfo } from './credits.js';
+import { checkShieldsForDrop } from './shield.js';
 
 // ---------- shared queries ----------
 
 const DROP_COLS = `
   d.id, d.title, d.item, d.category, d.emoji, d.story_text, d.gps_lat, d.gps_lng, d.walking_distance,
   d.difficulty, d.reward_value_usd, d.is_mystery, d.kid_friendly, d.quantity, d.remaining, (SELECT COUNT(*) FROM drop_photos p WHERE p.drop_id = d.id) AS photo_count, d.terms, m.logo IS NOT NULL AS has_logo,
-  d.status, d.created_at, d.destination_id, d.merchant_id, d.payment_status, d.fee_usd,
+  d.status, d.created_at, d.destination_id, d.merchant_id, d.payment_status, d.fee_usd, d.blocked_at,
   m.name AS merchant, m.hours, m.category AS merchant_category, m.address, m.lat AS biz_lat, m.lng AS biz_lng,
   (SELECT ROUND(AVG(r.overall_score), 1) FROM redemption_ratings r JOIN redemptions x ON x.id = r.redemption_id WHERE x.merchant_id = m.id) AS rating,
   (SELECT COUNT(*) FROM redemption_ratings r JOIN redemptions x ON x.id = r.redemption_id WHERE x.merchant_id = m.id) AS rating_count`;
@@ -25,7 +26,7 @@ export function shapeDrop(r, here, { revealMystery = false } = {}) {
     lat: r.gps_lat, lng: r.gps_lng, walkingNote: r.walking_distance, difficulty: r.difficulty,
     value: r.reward_value_usd, kids: !!r.kid_friendly, remaining: r.remaining, quantity: r.quantity,
     hasPhoto: r.photo_count > 0, photoCount: r.photo_count, hasLogo: !!r.has_logo, terms: r.terms, status: r.status, paymentStatus: r.payment_status, fee: r.fee_usd, merchant: r.merchant, merchantId: r.merchant_id,
-    hours: r.hours, rating: r.rating, ratingCount: r.rating_count, destination: r.destination_id,
+    hours: r.hours, blocked: !!r.blocked_at, rating: r.rating, ratingCount: r.rating_count, destination: r.destination_id,
     distanceM: m, walkMin: m == null ? null : walkMin(m),
     fromBusinessM: Number.isFinite(r.biz_lat) && Number.isFinite(r.biz_lng) ? distanceM(r.biz_lat, r.biz_lng, r.gps_lat, r.gps_lng) : null,
   };
@@ -369,6 +370,8 @@ export async function updateDrop(req, env, user, id) {
   const keys = Object.keys(d);
   if (!keys.length) return json({ ok: true, status: d.status ?? cur.status });
   await env.DB.prepare(`UPDATE treasure_drops SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`).bind(...keys.map((k) => d[k]), id).run();
+  // A treasure going live may land inside another merchant's Treasure Shield: tell them.
+  if (d.status === 'active' && cur.status !== 'active') await checkShieldsForDrop(env, id);
   if (d.payment_status === 'refunded') await changeCredits(env, cur.merchant_id, cur.quantity, 'refund', { ref: `drop:${id}`, note: `Treasure “${cur.title}” not approved`, by: user.id });
   return json({ ok: true, status: d.status ?? cur.status });
 }
@@ -625,6 +628,7 @@ export async function adminSettings(req, env, user) {
       claimHours: ['claim_hours', { min: 1, max: 168, int: true }],
       claimRadius: ['claim_radius_m', { min: 5, max: 5000, int: true }],
       welcomeDrops: ['welcome_drops', { min: 0, max: 10000, int: true }],
+      shieldMaxRadius: ['shield_max_radius_m', { min: 10, max: 2000, int: true }],
     };
     const stmts = Object.entries(map).filter(([k]) => b[k] !== undefined)
       .map(([k, [key, opt]]) => env.DB.prepare('INSERT INTO settings(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').bind(key, String(num(b[k], { ...opt, name: k }))));
