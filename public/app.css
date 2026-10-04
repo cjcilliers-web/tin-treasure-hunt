@@ -279,3 +279,11 @@ video.scan{width:100%;border-radius:12px;background:#000;aspect-ratio:1;object-f
 .card.msg.open{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold)}
 .msgtext{line-height:1.45}
 
+/* Map layer switch: large and readable */
+.leaflet-control-layers{border-radius:12px!important;font-size:15px;font-weight:700;color:#07100f}
+.leaflet-control-layers .leaflet-control-layers-base label{display:block;padding:4px 2px;margin:0;cursor:pointer;color:#07100f;font-size:15px;font-weight:700}
+.leaflet-control-layers .leaflet-control-layers-base label>span{display:flex;flex-direction:row;align-items:center;gap:6px}
+.leaflet-control-layers input.leaflet-control-layers-selector{width:auto;height:auto;margin:0;padding:0;flex:none;accent-color:#0b6b5c}
+.leaflet-control-layers-expanded{padding:6px 10px}
+
+.lmap{background:#e9eef0}
