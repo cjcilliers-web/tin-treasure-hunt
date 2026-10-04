@@ -7,6 +7,7 @@ import { runRaffle, raffleStatus, raffleDrawNow } from './raffle.js';
 import { payDrop, verifyCheckout, stripeWebhook } from './payments.js';
 import { syncTinMerchants, adminSyncTin, publicSyncTin } from './tin-sync.js';
 import { merchantSummary } from './tin-link.js';
+import * as G from './grand.js';
 import { myDropCredits, buyCredits, verifyCreditsCheckout, adminGiveCredits } from './credits.js';
 import { getShield, saveShield, shieldCheck, listMessages, actOnMessage } from './shield.js';
 
@@ -48,6 +49,24 @@ const routes = [
   ['GET', /^\/api\/merchant\/shield-check$/, (r, e, u) => shieldCheck(r, e, u)],
   ['GET', /^\/api\/merchant\/messages$/, (r, e, u) => listMessages(r, e, u)],
   ['POST', /^\/api\/merchant\/messages\/(\d+)\/act$/, (r, e, u, id) => actOnMessage(r, e, u, Number(id))],
+  ['GET', /^\/api\/grand$/, (r, e, u) => G.getGrand(r, e, u)],
+  ['POST', /^\/api\/grand\/claim$/, (r, e, u) => G.claimGrand(r, e, u)],
+  ['GET', /^\/api\/videos$/, (r, e, u) => G.nextVideos(r, e, u)],
+  ['POST', /^\/api\/videos\/(\d+)\/start$/, (r, e, u, id) => G.startVideo(r, e, u, Number(id))],
+  ['POST', /^\/api\/videos\/(\d+)\/complete$/, (r, e, u, id) => G.completeVideo(r, e, u, Number(id))],
+  ['POST', /^\/api\/videos\/(\d+)\/click$/, (r, e, u, id) => G.clickVideo(r, e, u, Number(id))],
+  ['GET', /^\/api\/merchant\/videos$/, (r, e, u) => G.merchantVideos(r, e, u)],
+  ['POST', /^\/api\/merchant\/videos$/, (r, e, u) => G.addMerchantVideo(r, e, u)],
+  ['PATCH', /^\/api\/merchant\/videos\/(\d+)$/, (r, e, u, id) => G.updateMerchantVideo(r, e, u, Number(id))],
+  ['POST', /^\/api\/merchant\/video-budget\/checkout$/, (r, e, u) => G.buyVideoBudget(r, e, u)],
+  ['GET', /^\/api\/merchant\/video-budget\/checkout\/([A-Za-z0-9_]+)$/, (r, e, u, sid) => G.verifyVideoBudget(r, e, u, sid)],
+  ['POST', /^\/api\/admin\/merchants\/(\d+)\/video-budget$/, (r, e, u, id) => G.adminGiveVideoBudget(r, e, u, Number(id))],
+  ['GET', /^\/api\/admin\/videos$/, (r, e, u) => G.adminVideos(r, e, u)],
+  ['POST', /^\/api\/admin\/videos$/, (r, e, u) => G.adminAddVideo(r, e, u)],
+  ['PATCH', /^\/api\/admin\/videos\/(\d+)$/, (r, e, u, id) => G.adminUpdateVideo(r, e, u, Number(id))],
+  ['GET', /^\/api\/admin\/grand$/, (r, e, u) => G.adminGrand(r, e, u)],
+  ['POST', /^\/api\/admin\/grand$/, (r, e, u) => G.adminCreateGrand(r, e, u)],
+  ['PATCH', /^\/api\/admin\/grand\/(\d+)$/, (r, e, u, id) => G.adminUpdateGrand(r, e, u, Number(id))],
   ['POST', /^\/api\/merchant\/lookup$/, (r, e, u) => H.lookupCode(r, e, u)],
   ['POST', /^\/api\/merchant\/confirm$/, (r, e, u) => H.confirmRedemption(r, e, u)],
   ['GET', /^\/api\/merchant\/stats$/, (r, e, u) => H.merchantStats(r, e, u)],

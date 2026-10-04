@@ -109,11 +109,13 @@ export async function stripeWebhook(req, env) {
 
   const event = JSON.parse(payload);
   const s = event.data?.object || {};
-  const isCredits = String(s.client_reference_id || '').startsWith('credits:');
+  const ref = String(s.client_reference_id || '');
+  const isCredits = ref.startsWith('credits:'), isVideo = ref.startsWith('video:');
   if ((event.type === 'checkout.session.completed' && s.payment_status === 'paid') || event.type === 'checkout.session.async_payment_succeeded') {
-    if (isCredits) await markCreditsPaid(env, s.id, s.payment_intent); else await markPaid(env, s.id, s.payment_intent);
+    if (isVideo) { const { markVideoBudgetPaid } = await import('./grand.js'); await markVideoBudgetPaid(env, s.id, s.payment_intent); }
+    else if (isCredits) await markCreditsPaid(env, s.id, s.payment_intent); else await markPaid(env, s.id, s.payment_intent);
   } else if (event.type === 'checkout.session.expired' || event.type === 'checkout.session.async_payment_failed') {
-    const table = isCredits ? 'credit_purchases' : 'payments';
+    const table = isVideo ? 'video_budget_purchases' : isCredits ? 'credit_purchases' : 'payments';
     await env.DB.prepare(`UPDATE ${table} SET status = 'expired' WHERE stripe_session_id = ? AND status = 'created'`).bind(s.id).run();
   }
   return json({ received: true });

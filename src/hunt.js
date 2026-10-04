@@ -629,6 +629,10 @@ export async function adminSettings(req, env, user) {
       claimRadius: ['claim_radius_m', { min: 5, max: 5000, int: true }],
       welcomeDrops: ['welcome_drops', { min: 0, max: 10000, int: true }],
       shieldMaxRadius: ['shield_max_radius_m', { min: 10, max: 2000, int: true }],
+      videoPrice15: ['video_price_15_cents', { min: 0, max: 10000, int: true }],
+      videoPrice30: ['video_price_30_cents', { min: 0, max: 10000, int: true }],
+      videoPotShare: ['video_pot_share_cents', { min: 0, max: 10000, int: true }],
+      videoDailyLimit: ['video_daily_limit', { min: 0, max: 500, int: true }],
     };
     const stmts = Object.entries(map).filter(([k]) => b[k] !== undefined)
       .map(([k, [key, opt]]) => env.DB.prepare('INSERT INTO settings(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').bind(key, String(num(b[k], { ...opt, name: k }))));
