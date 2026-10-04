@@ -5,7 +5,8 @@ import * as H from './hunt.js';
 import { askPolly, pollyTip } from './polly.js';
 import { runRaffle, raffleStatus, raffleDrawNow } from './raffle.js';
 import { payDrop, verifyCheckout, stripeWebhook } from './payments.js';
-import { syncTinMerchants, adminSyncTin } from './tin-sync.js';
+import { syncTinMerchants, adminSyncTin, publicSyncTin } from './tin-sync.js';
+import { merchantSummary } from './tin-link.js';
 import { myDropCredits, buyCredits, verifyCreditsCheckout, adminGiveCredits } from './credits.js';
 import { getShield, saveShield, shieldCheck, listMessages, actOnMessage } from './shield.js';
 
@@ -66,6 +67,8 @@ const routes = [
   ['GET', /^\/api\/admin\/raffle$/, (r, e, u) => raffleStatus(r, e, u)],
   ['POST', /^\/api\/admin\/raffle\/draw$/, (r, e, u) => raffleDrawNow(r, e, u)],
   ['POST', /^\/api\/admin\/sync-tin$/, (r, e, u) => adminSyncTin(r, e, u)],
+  ['POST', /^\/api\/tin-sync$/, (r, e) => publicSyncTin(r, e)],
+  ['POST', /^\/api\/tin\/merchant-summary$/, (r, e) => merchantSummary(r, e)],
 ];
 
 const SECURITY_HEADERS = {
