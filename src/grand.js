@@ -456,6 +456,21 @@ export async function adminUpdateGrand(req, env, user, id) {
     const status = b.status === 'live' && g.pot_cents >= g.goal_cents ? 'full' : b.status;
     await env.DB.prepare('UPDATE grand_treasures SET status = ? WHERE id = ?').bind(status, id).run();
   }
+  if (b.edit && typeof b.edit === 'object') {
+    if (g.status === 'found' || g.found_by) bad('This one was already found and cannot be edited');
+    const e = b.edit;
+    const lat = num(e.lat, { min: -90, max: 90, name: 'Latitude' }), lng = num(e.lng, { min: -180, max: 180, name: 'Longitude' });
+    await env.DB.prepare(`UPDATE grand_treasures SET title = ?, prize_text = ?, emoji = ?, photo_url = ?, area_name = ?, secret_lat = ?, secret_lng = ?, start_radius_m = ?, final_radius_m = ? WHERE id = ?`).bind(
+      str(e.title, { min: 3, max: 80, name: 'Title' }),
+      e.prize ? str(e.prize, { max: 300, name: 'Prize description' }) : null,
+      str(e.emoji || g.emoji || '🛵', { min: 1, max: 16, name: 'Emoji' }),
+      e.photo ? cleanLink(e.photo) : null,
+      e.area ? str(e.area, { max: 60, name: 'Area' }) : null,
+      lat, lng,
+      num(e.startRadius ?? g.start_radius_m, { min: 100, max: 50_000, int: true, name: 'Starting search circle (m)' }),
+      num(e.finalRadius ?? g.final_radius_m, { min: 10, max: 2000, int: true, name: 'Final search circle (m)' }),
+      id).run();
+  }
   if (Array.isArray(b.clues)) {
     const clues = grandInput({ ...g, title: g.title, goalUsd: g.goal_cents / 100, lat: g.secret_lat, lng: g.secret_lng, clues: b.clues }).clues;
     await env.DB.batch([env.DB.prepare('DELETE FROM grand_clues WHERE grand_id = ?').bind(id),
@@ -465,6 +480,25 @@ export async function adminUpdateGrand(req, env, user, id) {
     const goal = Math.round(num(b.goalUsd, { min: 1, max: 1_000_000, name: 'Goal (USD)' }) * 100);
     await env.DB.prepare(`UPDATE grand_treasures SET goal_cents = ?, status = CASE WHEN status IN ('live','full') THEN CASE WHEN pot_cents >= ? THEN 'full' ELSE 'live' END ELSE status END WHERE id = ?`).bind(goal, goal, id).run();
   }
+  return json({ ok: true });
+}
+
+// DELETE /api/admin/grand/:id — only for a Grand Treasure that never collected money or views
+// and was never found; anything with history must be made inactive instead, so the books stay whole.
+export async function adminDeleteGrand(req, env, user, id) {
+  requireRole(user, 'admin');
+  const g = await env.DB.prepare('SELECT * FROM grand_treasures WHERE id = ?').bind(id).first();
+  if (!g) bad('Not found', 404);
+  if (g.found_by || g.status === 'found') bad('This Grand Treasure was found. It is kept for the record; make it inactive instead.');
+  if (g.pot_cents > 0) bad(`This Grand Treasure has $${(g.pot_cents / 100).toFixed(2)} in its pot. Make it inactive instead of deleting it.`);
+  const w = await env.DB.prepare('SELECT COUNT(*) n FROM video_watches WHERE grand_id = ?').bind(id).first();
+  if (w && w.n > 0) bad('Explorers already watched videos for this Grand Treasure. Make it inactive instead of deleting it.');
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM grand_quiz_answers WHERE grand_id = ?').bind(id),
+    env.DB.prepare('DELETE FROM grand_quiz WHERE grand_id = ?').bind(id),
+    env.DB.prepare('DELETE FROM grand_clues WHERE grand_id = ?').bind(id),
+    env.DB.prepare('DELETE FROM grand_treasures WHERE id = ?').bind(id),
+  ]);
   return json({ ok: true });
 }
 

@@ -1344,7 +1344,20 @@ HQ.grand = async (el) => {
         <button class="sbtn gold">Add question</button></form>
         <form class="hqform sform" data-id="${g.id}" style="margin-top:8px"><label style="grid-column:1/-1">✨ Or let Polly suggest questions: paste facts about ${g.sponsor_name ? esc(g.sponsor_name) : 'the sponsor'}<textarea name="about" rows="3" placeholder="Founded in 1979 in New York… known for… store on Avenida Rafael Melgar…"></textarea></label><button class="sbtn">🦜 Suggest questions</button><div class="note sout" style="grid-column:1/-1"></div></form></details>` : ''}
     </div>
-    <div class="row" style="flex-wrap:wrap;gap:8px"><span class="gstate ${g.status === 'live' || g.status === 'full' ? 'on' : 'off'}">${g.status === 'live' || g.status === 'full' ? '● Active' : g.found_by ? '🏆 Found' : '○ Inactive'}</span>${(g.status === 'draft' || g.status === 'closed') && !g.found_by ? `<button class="sbtn go" data-gs="live" data-id="${g.id}">▶ Make Active</button>` : ''}${g.status === 'live' || g.status === 'full' ? `<button class="sbtn stop" data-gs="closed" data-id="${g.id}">⏸ Make Inactive</button>` : ''}</div></div>`).join('')}
+    <div class="row" style="flex-wrap:wrap;gap:8px"><span class="gstate ${g.status === 'live' || g.status === 'full' ? 'on' : 'off'}">${g.status === 'live' || g.status === 'full' ? '● Active' : g.found_by ? '🏆 Found' : '○ Inactive'}</span>${(g.status === 'draft' || g.status === 'closed') && !g.found_by ? `<button class="sbtn go" data-gs="live" data-id="${g.id}">▶ Make Active</button>` : ''}${g.status === 'live' || g.status === 'full' ? `<button class="sbtn stop" data-gs="closed" data-id="${g.id}">⏸ Make Inactive</button>` : ''}${g.status !== 'found' && !g.found_by ? `<button class="sbtn" data-gedit="${g.id}">✏️ Edit</button>` : ''}${g.status !== 'found' && !g.found_by && !(g.pot_cents > 0) ? `<button class="sbtn stop" data-gdel="${g.id}">🗑 Delete</button>` : ''}</div>
+    ${g.status !== 'found' && !g.found_by ? `<form class="hqform gedit" id="gedit${g.id}" data-id="${g.id}" hidden>
+      <label style="grid-column:1/-1">Title<input name="title" required minlength="3" maxlength="80" value="${esc(g.title)}"></label>
+      <label style="grid-column:1/-1">Prize description<input name="prize" maxlength="300" value="${esc(g.prize_text || '')}"></label>
+      <label>Icon<input name="emoji" maxlength="16" value="${esc(g.emoji || '')}"></label>
+      <label>Area<input name="area" maxlength="60" value="${esc(g.area_name || '')}"></label>
+      <label style="grid-column:1/-1">Photo link<input name="photo" value="${esc(g.photo_url || '')}"></label>
+      <label>Secret latitude<input name="lat" required inputmode="decimal" value="${g.secret_lat}"></label>
+      <label>Secret longitude<input name="lng" required inputmode="decimal" value="${g.secret_lng}"></label>
+      <label>Starting search circle (m)<input name="startRadius" type="number" min="100" max="50000" value="${g.start_radius_m}"></label>
+      <label>Final search circle (m)<input name="finalRadius" type="number" min="10" max="2000" value="${g.final_radius_m}"></label>
+      <label>Goal (USD)<input name="goalUsd" type="number" min="1" step="1" value="${g.goal_cents / 100}"></label>
+      <label style="grid-column:1/-1">Clues, one per line as percent: text<textarea name="clues" rows="4">${esc(g.clues.map((c) => `${c.unlock_pct}: ${c.text}`).join('\n'))}</textarea></label>
+      <div class="row" style="grid-column:1/-1;gap:8px"><button class="sbtn gold">Save changes</button><button type="button" class="sbtn" data-gcancel="${g.id}">Cancel</button></div></form>` : ''}</div>`).join('')}
   <div class="card"><h3>Create a Grand Treasure</h3><form class="hqform" id="gf">
     <label>Title<input name="title" required placeholder="A brand-new scooter"></label><label>Emoji<input name="emoji" value="🛵"></label>
     <label style="grid-column:1/-1">Given by (sponsor)<select name="sponsorMerchantId"><option value="">TIN's own treasure (filled by every business video)</option>${merchants.filter((m) => m.status === 'active').map((m) => `<option value="${m.id}">${esc(m.name)} (only their videos fill it)</option>`).join('')}</select></label>
@@ -1361,6 +1374,15 @@ HQ.grand = async (el) => {
   if (hqJustCreated) { const card = $(`#hqg${hqJustCreated}`, el); if (card) setTimeout(() => card.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50); hqJustCreated = null; }
   // Enter in a text box must not create the treasure by accident; only the button does.
   $$('#gf input', el).forEach((i) => i.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); if (i.id === 'gcoords') $('#ggo', el).click(); } }));
+  $$('[data-gedit]', el).forEach((b) => (b.onclick = () => { const f = $(`#gedit${b.dataset.gedit}`, el); f.hidden = !f.hidden; if (!f.hidden) f.scrollIntoView({ behavior: 'smooth', block: 'center' }); }));
+  $$('[data-gcancel]', el).forEach((b) => (b.onclick = () => { $(`#gedit${b.dataset.gcancel}`, el).hidden = true; }));
+  $$('form.gedit', el).forEach((f) => (f.onsubmit = async (ev) => {
+    ev.preventDefault(); const v = Object.fromEntries(new FormData(f));
+    const clues = String(v.clues || '').split('\n').map((l) => l.trim()).filter(Boolean).map((l) => { const m = l.match(/^(\d{1,3})\s*%?\s*[:\-]\s*(.+)$/); return m ? { pct: Number(m[1]), text: m[2] } : null; });
+    if (clues.some((c) => !c)) { hqToast('Each clue line must look like  25: the clue text'); return; }
+    try { await api(`/api/admin/grand/${f.dataset.id}`, { method: 'PATCH', body: { edit: { title: v.title, prize: v.prize, emoji: v.emoji, area: v.area, photo: v.photo, lat: Number(v.lat), lng: Number(v.lng), startRadius: Number(v.startRadius), finalRadius: Number(v.finalRadius) }, goalUsd: Number(v.goalUsd), clues } }); hqToast('Saved'); hqRender(); } catch (e) { hqToast(e.message); }
+  }));
+  $$('[data-gdel]', el).forEach((b) => (b.onclick = async () => { if (!confirm('Delete this Grand Treasure for good? This cannot be undone.')) return; try { await api(`/api/admin/grand/${b.dataset.gdel}`, { method: 'DELETE' }); hqToast('Deleted'); hqRender(); } catch (e) { hqToast(e.message); } }));
   $$('[data-qdel]', el).forEach((b) => (b.onclick = async () => { if (!confirm('Remove this question?')) return; try { await api(`/api/admin/grand/${b.dataset.id}/quiz/${b.dataset.qdel}`, { method: 'DELETE' }); hqRender(); } catch (e) { hqToast(e.message); } }));
   $$('.qform', el).forEach((fm) => (fm.onsubmit = async (e) => {
     e.preventDefault(); const f = Object.fromEntries(new FormData(fm));
