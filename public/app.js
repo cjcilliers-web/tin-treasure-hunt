@@ -967,8 +967,10 @@ function dropForm(el, d) {
     <label>Name your treasure<input id="tn" required maxlength="80" placeholder="e.g. The Captain's Burger" value="${esc(d?.title || '')}"></label>
     <label>What's the free reward?<input id="it" required maxlength="120" placeholder="e.g. Free burger" value="${esc(d?.item || '')}"></label>
     <label>What's the story behind this find? (required)<textarea id="cl" required minlength="10" maxlength="600" placeholder="Captain Morgan left this burger near the place where travelers first arrive on the island. Can you find it before another explorer does?">${esc(d?.story || '')}</textarea></label>
-    <div class="two"><label>Treasure type<select id="ct">${CATS.map((c) => `<option ${d?.category === c ? 'selected' : ''}>${c}</option>`).join('')}</select></label>
-      <label>Icon<select id="em">${['🍔', '🌮', '🍕', '🦞', '🍣', '🥐', '🍰', '☕', '🍹', '🍺', '🍷', '🍾', '🥂', '🍸', '🥃', '🍦', '🍫', '🤿', '🐢', '🐠', '🛶', '🚤', '⛵', '🎣', '🏄', '🛵', '🚲', '🏖️', '💆', '💅', '🕶️', '👗', '💎', '🛍️', '🎟️', '🎉', '⭐', '🎁', '🗝️'].map((e) => `<option ${d?.emoji === e ? 'selected' : ''}>${e}</option>`).join('')}</select></label></div>
+    <label>Treasure type<select id="ct">${CATS.map((c) => `<option ${d?.category === c ? 'selected' : ''}>${c}</option>`).join('')}</select></label>
+    <div class="icon-pick"><span class="icon-pick-title">Icon <b id="emShow">${esc(d?.emoji || '🎁')}</b></span><input type="hidden" id="em" value="${esc(d?.emoji || '🎁')}">
+      <div class="icon-grid" role="radiogroup" aria-label="Choose an icon">${['🍔', '🌮', '🍕', '🦞', '🍣', '🥐', '🍰', '☕', '🍹', '🍺', '🍷', '🍾', '🥂', '🍸', '🥃', '🍦', '🍫', '🤿', '🐢', '🐠', '🛶', '🚤', '⛵', '🎣', '🏄', '🛵', '🚲', '🏖️', '💆', '💅', '🕶️', '👗', '💎', '🛍️', '🎟️', '🎉', '⭐', '🎁', '🗝️'].map((e) => `<button type="button" role="radio" class="icon-opt${(d?.emoji || '🎁') === e ? ' on' : ''}" aria-checked="${(d?.emoji || '🎁') === e}" data-em="${e}">${e}</button>`).join('')}</div>
+      <label class="icon-own">Or paste any emoji<input id="emOwn" maxlength="8" placeholder="e.g. 🍾" autocomplete="off"></label></div>
     <div class="two"><label>Difficulty<select id="df">${['Easy', 'Medium', 'Hard'].map((x) => `<option ${d?.difficulty === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
       <label>Retail value (USD)<input id="vl" type="number" min="0" step="0.5" value="${d?.value ?? 5}"></label></div>
     ${edit ? '' : `<label>How many drops<input id="qt" type="number" min="1" max="1000" value="10" required></label>`}
@@ -1003,6 +1005,10 @@ function dropForm(el, d) {
     }));
   };
   $('#bk', el).onclick = () => go('mList');
+  // Big icon picker: tap an icon, or paste any emoji in the box below the grid.
+  const pickIcon = (val) => { const em = $('#em', el); em.value = val; $('#emShow', el).textContent = val; $$('.icon-opt', el).forEach((b) => { const on = b.dataset.em === val; b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on)); }); em.dispatchEvent(new Event('change')); };
+  $$('.icon-opt', el).forEach((b) => (b.onclick = () => pickIcon(b.dataset.em)));
+  $('#emOwn', el).oninput = (e) => { const v = e.target.value.trim(); if (v && !/[A-Za-z0-9]/.test(v)) pickIcon(v); };
   const place = placePicker(el, d);
   const qt = $('#qt', el); if (qt && !hq) qt.oninput = () => { const q = Number(qt.value) || 0; $('#tot').textContent = q; $('#getmore').hidden = q <= have; };
   const gm = $('#getmore', el); if (gm) gm.onclick = () => go('mList');
