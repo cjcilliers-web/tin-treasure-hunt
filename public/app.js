@@ -1371,7 +1371,12 @@ HQ.grand = async (el) => {
     <fieldset style="grid-column:1/-1;border:1px solid var(--line);border-radius:10px;padding:10px"><legend class="note">Clues: what explorers see as the pot grows</legend>
       ${[10, 30, 50, 70, 90, 100].map((p, i) => `<div class="row" style="gap:8px;align-items:center;margin:4px 0"><input name="cp${i}" type="number" min="0" max="100" value="${p}" style="width:80px" aria-label="Opens at %"><span class="note">%</span><input name="ct${i}" placeholder="Clue ${i + 1}" style="flex:1"></div>`).join('')}</fieldset>
     <button class="sbtn gold">Create (as a draft)</button></form></div>`;
-  $$('[data-gs]', el).forEach((b) => (b.onclick = async () => { if (b.dataset.gs === 'closed' && !confirm('Make this Grand Treasure inactive? Explorers will not see it until you make it active again. Its pot and clues are kept.')) return; try { await api(`/api/admin/grand/${b.dataset.id}`, { method: 'PATCH', body: { status: b.dataset.gs } }); hqToast('Updated'); hqRender(); } catch (e) { hqToast(e.message); } }));
+  $$('[data-gs]', el).forEach((b) => (b.onclick = async () => {
+    if (b.dataset.gs === 'closed' && !confirm('Turn this Grand Treasure OFF? Players will not see it until you turn it ON again. Its pot and clues are kept.')) return;
+    const label = b.textContent; b.disabled = true; b.textContent = '…';
+    try { await api(`/api/admin/grand/${b.dataset.id}`, { method: 'PATCH', body: { status: b.dataset.gs } }); hqToast(b.dataset.gs === 'live' ? 'ON: players can see it now' : 'OFF: hidden from players'); hqRender(); }
+    catch (e) { b.disabled = false; b.textContent = label; alert(String(e.message || 'Could not change it').replace(/Close it first\.?/, 'Turn that one OFF first, then turn this one ON.')); }
+  }));
   if (hqJustCreated) { const card = $(`#hqg${hqJustCreated}`, el); if (card) setTimeout(() => card.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50); hqJustCreated = null; }
   // Enter in a text box must not create the treasure by accident; only the button does.
   $$('#gf input', el).forEach((i) => i.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); if (i.id === 'gcoords') $('#ggo', el).click(); } }));
