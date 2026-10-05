@@ -101,13 +101,16 @@ export async function adminGiveVideoBudget(req, env, user, id) {
 
 // ---------- videos (merchants and HQ) ----------
 
-const STATS = `(SELECT COUNT(*) FROM video_watches w WHERE w.video_id = v.id AND w.completed_at IS NOT NULL) AS views,
-  (SELECT COALESCE(SUM(charged_cents), 0) FROM video_watches w WHERE w.video_id = v.id) AS spent,
+const STATS = `(SELECT COUNT(*) FROM video_watches w WHERE w.video_id = v.id AND w.completed_at IS NOT NULL)
+    + (SELECT COUNT(*) FROM ad_network_views a WHERE a.video_id = v.id) AS views,
+  (SELECT COUNT(*) FROM ad_network_views a WHERE a.video_id = v.id AND a.source = 'spin') AS spin_views,
+  (SELECT COALESCE(SUM(charged_cents), 0) FROM video_watches w WHERE w.video_id = v.id)
+    + (SELECT COALESCE(SUM(charged_cents), 0) FROM ad_network_views a WHERE a.video_id = v.id) AS spent,
   (SELECT COUNT(*) FROM video_watches w WHERE w.video_id = v.id AND w.link_clicked = 1) AS clicks`;
 const shapeVideo = (v, s) => ({
   id: v.id, merchantId: v.merchant_id, sponsor: v.sponsor_name, title: v.title, youtubeId: v.youtube_id, length: v.length_s,
   coupon: v.coupon_text, link: v.link_url, status: v.status, createdAt: v.created_at,
-  pricePerView: v.merchant_id ? priceFor(s, v.length_s) : 0, views: v.views ?? 0, spent: v.spent ?? 0, clicks: v.clicks ?? 0,
+  pricePerView: v.merchant_id ? priceFor(s, v.length_s) : 0, views: v.views ?? 0, spinViews: v.spin_views ?? 0, spent: v.spent ?? 0, clicks: v.clicks ?? 0,
 });
 function videoInput(b) {
   const id = youtubeId(b.url);
@@ -280,11 +283,22 @@ export async function completeVideo(req, env, user, id) {
   const coupon = { text: v.coupon_text, link: v.link_url, sponsor: v.sponsor_name };
   if (watch.completed_at) return json({ counted: false, already: true, coupon });
   if ((Date.now() - Date.parse(watch.started_at)) / 1000 < v.length_s - 1) bad('Please watch the whole video.', 400);
-  const s = await getSettings(env.DB);
   const done = await env.DB.prepare(`SELECT COUNT(*) n FROM video_watches WHERE user_id = ? AND day = ? AND completed_at IS NOT NULL AND pot_cents > 0`).bind(user.id, today()).first();
+  const r = await chargeView(env, v, done.n);
+  await env.DB.prepare('UPDATE video_watches SET completed_at = ?, charged_cents = ?, pot_cents = ?, grand_id = ? WHERE id = ?')
+    .bind(nowIso(), r.charged, r.pot, r.grandId, watch.id).run();
+  const after = await fillPot(env, r);
+  return json({ counted: r.pot > 0, reason: r.reason, potAdded: r.pot, coupon, grand: after ? await publicGrand(env, after, user) : null });
+}
+
+// One finished view, wherever it was watched (Treasure Hunt or Spin & Win): charge the advertiser
+// the HQ price and work out the pot share for the live Grand Treasure. `doneToday` = the viewer's
+// counted views today, for the daily limit.
+export async function chargeView(env, v, doneToday) {
+  const s = await getSettings(env.DB);
   const g = await env.DB.prepare(`SELECT id FROM grand_treasures WHERE status = 'live' ORDER BY id DESC LIMIT 1`).first();
   let charged = 0, pot = 0, reason = null;
-  if (done.n >= s.videoDailyLimit) reason = 'daily-limit';
+  if (doneToday >= s.videoDailyLimit) reason = 'daily-limit';
   else {
     if (v.merchant_id) {
       const price = priceFor(s, v.length_s);
@@ -293,16 +307,17 @@ export async function completeVideo(req, env, user, id) {
     }
     if (!reason && g) pot = s.videoPotShare;
   }
-  await env.DB.prepare('UPDATE video_watches SET completed_at = ?, charged_cents = ?, pot_cents = ?, grand_id = ? WHERE id = ?')
-    .bind(nowIso(), charged, pot, pot ? g.id : null, watch.id).run();
-  let grand = null;
-  if (pot) {
-    const after = await env.DB.prepare(`UPDATE grand_treasures SET pot_cents = MIN(goal_cents, pot_cents + ?), views = views + 1,
-        status = CASE WHEN pot_cents + ? >= goal_cents THEN 'full' ELSE status END WHERE id = ? AND status = 'live' RETURNING *`).bind(pot, pot, g.id).first();
-    if (after) grand = await publicGrand(env, after, user);
-  }
-  return json({ counted: pot > 0, reason, potAdded: pot, coupon, grand });
+  return { charged, pot, reason, grandId: pot ? g.id : null };
 }
+
+// Adds a view's pot share to the Grand Treasure; returns the updated row (or null).
+export async function fillPot(env, { pot, grandId }) {
+  if (!pot) return null;
+  return env.DB.prepare(`UPDATE grand_treasures SET pot_cents = MIN(goal_cents, pot_cents + ?), views = views + 1,
+      status = CASE WHEN pot_cents + ? >= goal_cents THEN 'full' ELSE status END WHERE id = ? AND status = 'live' RETURNING *`).bind(pot, pot, grandId).first();
+}
+
+export { publicGrand, priceFor };
 
 // POST /api/videos/:id/click
 export async function clickVideo(req, env, user, id) {
@@ -323,7 +338,10 @@ export async function adminGrand(req, env, user) {
     out.push({ ...g, clues });
   }
   const s = await getSettings(env.DB);
-  const totals = await env.DB.prepare(`SELECT COUNT(*) views, COALESCE(SUM(charged_cents),0) charged, COALESCE(SUM(pot_cents),0) pot FROM video_watches WHERE completed_at IS NOT NULL`).first();
+  const totals = await env.DB.prepare(`SELECT COUNT(*) views, COALESCE(SUM(charged_cents),0) charged, COALESCE(SUM(pot_cents),0) pot FROM (
+      SELECT charged_cents, pot_cents FROM video_watches WHERE completed_at IS NOT NULL
+      UNION ALL SELECT charged_cents, pot_cents FROM ad_network_views)`).first();
+  totals.spinViews = (await env.DB.prepare('SELECT COUNT(*) n FROM ad_network_views').first()).n;
   return json({ grands: out, settings: { price15: s.videoPrice15, price30: s.videoPrice30, potShare: s.videoPotShare, dailyLimit: s.videoDailyLimit }, totals });
 }
 
