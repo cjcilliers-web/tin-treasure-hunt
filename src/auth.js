@@ -160,6 +160,12 @@ export async function tinSso(req, env, url) {
     const row = await userForEmail(env, email, who.name, admins.includes(email) ? 'admin' : 'traveler');
     return go('/app', await startSession(env, req, row.id));
   }
+  // Admin sign-on from the TIN Admin Cockpit: straight into TIN HQ as an admin (all three views).
+  if (url.searchParams.get('next') === 'hq' && who.admin === true) {
+    const adminRow = await userForEmail(env, email, email.split('@')[0], 'admin');
+    await env.DB.prepare(`UPDATE tin_users SET role = 'admin' WHERE id = ?`).bind(adminRow.id).run();
+    return go('/app?mode=hq', await startSession(env, req, adminRow.id));
+  }
   // Merchant sign-on: find this TIN merchant in the Treasure Hunt (sync it in if it was just switched on).
   const tinId = Number(who.tinMerchantId);
   let m = await env.DB.prepare('SELECT id FROM merchants WHERE tin_merchant_id = ?').bind(tinId).first();
