@@ -105,11 +105,24 @@ async function boot() {
     if (!params.get('paid') && !params.get('unpaid') && !params.get('credits') && !params.get('credits_cancel')) history.replaceState(null, '', location.pathname);
   }
   if (params.get('sso') === 'not-switched-on') toast('This business is not in the Treasure Hunt yet. Switch it on in your TIN Merchant Cockpit first.');
+  // Merchant-only screen: merchants, and anyone arriving from a TIN Merchant Cockpit, see only their
+  // merchant tools (no Explorer / TIN HQ switch). TIN admins get the full app back with /app?mode=hq.
+  let lock = false;
+  try {
+    if (wantMode === 'merchant' && canMerchant) sessionStorage.setItem('th_merchant_only', String(canHq && wantM > 0 ? wantM : 1));
+    if (wantMode === 'hq' && canHq) { sessionStorage.removeItem('th_merchant_only'); S.mode = 'hq'; saveUi(); history.replaceState(null, '', location.pathname); }
+    const held = Number(sessionStorage.getItem('th_merchant_only') || 0);
+    lock = S.me.role === 'merchant' || (canMerchant && held > 0);
+    if (canHq && held > 1 && !S.merchantId) { S.merchantId = held; S.merchant = null; }
+  } catch { lock = S.me.role === 'merchant' || (wantMode === 'merchant' && canMerchant); }
+  S.merchantOnly = lock;
   $('[data-mode="merchant"]', sw).hidden = !canMerchant;
   $('[data-mode="hq"]', sw).hidden = !canHq;
-  sw.hidden = !canMerchant;
+  sw.hidden = !canMerchant || lock;
+  if (lock) S.mode = 'merchant';
   if ((S.mode === 'merchant' && !canMerchant) || (S.mode === 'hq' && !canHq)) S.mode = 'traveler';
   $$('[data-mode]', sw).forEach((b) => (b.onclick = () => setMode(b.dataset.mode)));
+  $('#credBtn').hidden = lock;
   $('#credBtn').onclick = () => { setMode('traveler'); go('wallet'); };
   startLocation();
   refreshCredits();
@@ -151,6 +164,7 @@ async function refreshCredits() {
 }
 
 function setMode(m, first) {
+  if (S.merchantOnly) m = 'merchant';
   S.mode = m; saveUi();
   $$('#viewsw [data-mode]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === m)));
   $('#phone').hidden = m === 'hq';
