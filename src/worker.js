@@ -69,6 +69,7 @@ const routes = [
   ['GET', /^\/api\/admin\/grand$/, (r, e, u) => G.adminGrand(r, e, u)],
   ['POST', /^\/api\/admin\/grand$/, (r, e, u) => G.adminCreateGrand(r, e, u)],
   ['PATCH', /^\/api\/admin\/grand\/(\d+)$/, (r, e, u, id) => G.adminUpdateGrand(r, e, u, Number(id))],
+  ['DELETE', /^\/api\/admin\/grand\/(\d+)$/, (r, e, u, id) => G.adminDeleteGrand(r, e, u, Number(id))],
   ['POST', /^\/api\/admin\/grand\/(\d+)\/quiz$/, (r, e, u, id) => G.adminAddQuiz(r, e, u, Number(id))],
   ['POST', /^\/api\/admin\/grand\/(\d+)\/quiz\/suggest$/, (r, e, u, id) => G.adminSuggestQuiz(r, e, u, Number(id))],
   ['DELETE', /^\/api\/admin\/grand\/(\d+)\/quiz\/(\d+)$/, (r, e, u, id, q) => G.adminDeleteQuiz(r, e, u, Number(id), Number(q))],
