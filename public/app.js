@@ -909,9 +909,31 @@ function placePicker(el, d) {
   const cmsg = (txt, good) => { const c = $('#cmsg', el); if (c) { c.textContent = txt; c.style.color = good ? '#2fbf71' : '#ff6b6b'; } };
   const jump = () => { const p = parseCoords(input.value); if (!p) { cmsg('Those coordinates were not understood. Try 20.5110, -86.9499 or 20°30\'39"N 86°56\'59"W.', false); return; } set(p); cmsg(`✓ Pin moved to ${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`, true); };
   $('#cgo', el).onclick = jump;
-  // Separate Latitude / Longitude boxes: Enter or leaving a box moves the pin (decimal or 20°30'39"N style).
-  const jumpLL = () => { const la = $('#clat', el).value.trim(), lo = $('#clng', el).value.trim(); if (!la || !lo) return; const p = parseCoords(`${la}, ${lo}`); if (!p) { cmsg('Latitude or longitude not understood. Example: 20.511204 and -86.949696.', false); return; } set(p); cmsg(`✓ Pin moved to ${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`, true); };
-  ['#clat', '#clng'].forEach((id) => { const f = $(id, el); f.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); jumpLL(); } }; f.onchange = jumpLL; f.onpaste = () => setTimeout(jumpLL, 0); });
+  // Separate Latitude / Longitude boxes. Each box is read on its own (decimal like -86.949696,
+  // or Google Earth style like 86°56'59.48"W). The pin only moves once BOTH boxes are valid,
+  // so typing one box never sends the pin somewhere wrong.
+  const parseOne = (raw, isLat) => {
+    const t = String(raw || '').trim().replace(/[\u2032\u2019\u00b4`]/g, "'").replace(/[\u2033\u201c\u201d]|''/g, '"').replace(/\u00ba/g, '\u00b0').replace(',', '.');
+    if (!t) return null;
+    const hemi = (t.match(/[NSEWnsew]\s*$/) || t.match(/^\s*[NSEWnsew]/) || [''])[0].trim().toUpperCase();
+    if (hemi && (isLat ? !/[NS]/.test(hemi) : !/[EW]/.test(hemi))) return null;
+    const nums = (t.match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
+    if (!nums.length || nums.length > 3) return null;
+    const neg = nums[0] < 0 || /[SW]/.test(hemi);
+    const v = Math.abs(nums[0]) + (nums[1] || 0) / 60 + (nums[2] || 0) / 3600;
+    const out = neg ? -v : v;
+    return Number.isFinite(out) && Math.abs(out) <= (isLat ? 90 : 180) ? out : null;
+  };
+  const jumpLL = (loud) => {
+    // A full "lat, long" pasted into either box is split into both boxes.
+    for (const id of ['#clat', '#clng']) { const v = $(id, el).value; if (/[,;]/.test(v.replace(/^\s*-?\d+,\d+\s*$/, '')) || (/[NSns]/.test(v) && /[EWew]/.test(v))) { const both = parseCoords(v); if (both) { $('#clat', el).value = both.lat.toFixed(6); $('#clng', el).value = both.lng.toFixed(6); } } }
+    const la = $('#clat', el).value, lo = $('#clng', el).value;
+    if (!la.trim() || !lo.trim()) return;
+    const lat = parseOne(la, true), lng = parseOne(lo, false);
+    if (lat === null || lng === null) { if (loud) cmsg(lat === null ? 'Latitude not understood. Example: 20.511204 or 20°30\'39.43"N' : 'Longitude not understood. Example: -86.949696 or 86°56\'59.48"W', false); return; }
+    set({ lat, lng }); cmsg(`✓ Pin moved to ${lat.toFixed(5)}, ${lng.toFixed(5)}`, true);
+  };
+  ['#clat', '#clng'].forEach((id) => { const f = $(id, el); f.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); jumpLL(true); } }; f.onchange = () => jumpLL(false); f.onpaste = () => setTimeout(() => jumpLL(false), 0); f.oninput = () => cmsg('', true); });
   input.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); jump(); } };
   input.onpaste = () => setTimeout(() => { if (parseCoords(input.value)) jump(); }, 0);
   $('#pbiz', el).onclick = () => set(biz);
@@ -946,7 +968,7 @@ function dropForm(el, d) {
     <label>What's the free reward?<input id="it" required maxlength="120" placeholder="e.g. Free burger" value="${esc(d?.item || '')}"></label>
     <label>What's the story behind this find? (required)<textarea id="cl" required minlength="10" maxlength="600" placeholder="Captain Morgan left this burger near the place where travelers first arrive on the island. Can you find it before another explorer does?">${esc(d?.story || '')}</textarea></label>
     <div class="two"><label>Treasure type<select id="ct">${CATS.map((c) => `<option ${d?.category === c ? 'selected' : ''}>${c}</option>`).join('')}</select></label>
-      <label>Icon<select id="em">${['🍔', '🌮', '🍕', '☕', '🍹', '🍺', '🍦', '🍫', '🤿', '🛶', '🛵', '🏖️', '💎', '🛍️', '🎁', '🗝️'].map((e) => `<option ${d?.emoji === e ? 'selected' : ''}>${e}</option>`).join('')}</select></label></div>
+      <label>Icon<select id="em">${['🍔', '🌮', '🍕', '🦞', '🍣', '🥐', '🍰', '☕', '🍹', '🍺', '🍷', '🍾', '🥂', '🍸', '🥃', '🍦', '🍫', '🤿', '🐢', '🐠', '🛶', '🚤', '⛵', '🎣', '🏄', '🛵', '🚲', '🏖️', '💆', '💅', '🕶️', '👗', '💎', '🛍️', '🎟️', '🎉', '⭐', '🎁', '🗝️'].map((e) => `<option ${d?.emoji === e ? 'selected' : ''}>${e}</option>`).join('')}</select></label></div>
     <div class="two"><label>Difficulty<select id="df">${['Easy', 'Medium', 'Hard'].map((x) => `<option ${d?.difficulty === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
       <label>Retail value (USD)<input id="vl" type="number" min="0" step="0.5" value="${d?.value ?? 5}"></label></div>
     ${edit ? '' : `<label>How many drops<input id="qt" type="number" min="1" max="1000" value="10" required></label>`}
@@ -955,7 +977,7 @@ function dropForm(el, d) {
       <label style="flex-direction:row;display:flex;gap:6px;align-items:center"><input type="checkbox" id="my" style="width:auto" ${d?.mystery ? 'checked' : ''}> Mystery reward</label></div>
     <fieldset class="place"><legend>Where is the treasure hidden?</legend>
       <p class="note">Drag the pin to the exact spot or tap the map. You can also paste coordinates, for example from Google Maps.</p>
-      <div class="row" style="gap:8px;flex-wrap:wrap"><input id="coords" inputmode="text" autocomplete="off" placeholder="e.g. 20.6296, -87.0739" aria-label="Coordinates: latitude, longitude" style="flex:1;min-width:180px"><button type="button" class="sbtn gold" id="cgo" style="flex:none">Go</button></div><div class="row" style="gap:8px;flex-wrap:wrap;margin-top:6px"><label style="flex:1;min-width:140px;display:flex;flex-direction:column;gap:4px;font-weight:700">Latitude<input id="clat" inputmode="decimal" autocomplete="off" placeholder="20.511204" aria-label="Latitude"></label><label style="flex:1;min-width:140px;display:flex;flex-direction:column;gap:4px;font-weight:700">Longitude<input id="clng" inputmode="decimal" autocomplete="off" placeholder="-86.949696" aria-label="Longitude"></label></div><div id="cmsg" role="status" aria-live="polite" style="min-height:18px;margin:4px 2px 0;font-size:14px;font-weight:700"></div>
+      <div class="row" style="display:none"><input id="coords" inputmode="text" autocomplete="off" placeholder="e.g. 20.6296, -87.0739" aria-label="Coordinates: latitude, longitude" style="flex:1;min-width:180px"><button type="button" class="sbtn gold" id="cgo" style="flex:none">Go</button></div><div class="row" style="gap:8px;flex-wrap:wrap;margin-top:6px"><label style="flex:1;min-width:140px;display:flex;flex-direction:column;gap:4px;font-weight:700">Latitude<input id="clat" inputmode="decimal" autocomplete="off" placeholder="20.511204" aria-label="Latitude"></label><label style="flex:1;min-width:140px;display:flex;flex-direction:column;gap:4px;font-weight:700">Longitude<input id="clng" inputmode="decimal" autocomplete="off" placeholder="-86.949696" aria-label="Longitude"></label></div><div id="cmsg" role="status" aria-live="polite" style="min-height:18px;margin:4px 2px 0;font-size:14px;font-weight:700"></div>
       <div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="sbtn" id="pme">📍 Where I'm standing</button><button type="button" class="sbtn" id="pbiz">🏪 At my business</button></div>
       <div class="lmap pmap" id="pmap" role="region" aria-label="Map: drag the pin to place the treasure"></div>
       <p class="note" id="pinfo" role="status"></p>
