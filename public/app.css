@@ -333,3 +333,4 @@ video.scan{width:100%;border-radius:12px;background:#000;aspect-ratio:1;object-f
 .gstate{display:inline-flex;align-items:center;padding:6px 12px;border-radius:999px;font-weight:800;font-size:.9rem}
 .gstate.on{background:rgba(47,191,113,.18);color:#2fbf71}
 .gstate.off{background:rgba(255,255,255,.08);color:#b8c4c8}
+.gstate.off{background:rgba(255,92,92,.15);color:#ff8a8a}
