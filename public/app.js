@@ -112,9 +112,9 @@ async function boot() {
     if (wantMode === 'merchant' && canMerchant) sessionStorage.setItem('th_merchant_only', String(canHq && wantM > 0 ? wantM : 1));
     if (wantMode === 'hq' && canHq) { sessionStorage.removeItem('th_merchant_only'); S.mode = 'hq'; saveUi(); history.replaceState(null, '', location.pathname); }
     const held = Number(sessionStorage.getItem('th_merchant_only') || 0);
-    lock = S.me.role === 'merchant' || (canMerchant && held > 0);
+    lock = S.me.role === 'merchant'; // TIN admins always keep Explorer / Merchant / TIN HQ
     if (canHq && held > 1 && !S.merchantId) { S.merchantId = held; S.merchant = null; }
-  } catch { lock = S.me.role === 'merchant' || (wantMode === 'merchant' && canMerchant); }
+  } catch { lock = S.me.role === 'merchant'; }
   S.merchantOnly = lock;
   $('[data-mode="merchant"]', sw).hidden = !canMerchant;
   $('[data-mode="hq"]', sw).hidden = !canHq;
