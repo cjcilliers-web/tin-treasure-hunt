@@ -1274,11 +1274,12 @@ HQ.videos = async (el) => {
 };
 
 let hqGrandMap = null;
+let hqJustCreated = null; // id of the Grand Treasure just created, to scroll to it
 HQ.grand = async (el) => {
   const [{ grands, totals }, { merchants }] = await Promise.all([api('/api/admin/grand'), api('/api/admin/merchants')]);
   const pill = (st) => `<span class="pill ${st === 'live' ? 'live' : st === 'found' || st === 'closed' ? 'ended' : 'draft'}">${st === 'full' ? 'pot full' : st}</span>`;
   el.innerHTML = `<div class="hqgrid"><div class="kpi"><b>${totals.views}</b><span>Finished video views${totals.spinViews ? ` (🎰 ${totals.spinViews} in Spin & Win)` : ''}</span></div><div class="kpi"><b>${usdc(totals.charged)}</b><span>Charged to merchants</span></div><div class="kpi"><b>${usdc(totals.pot)}</b><span>Put into pots</span></div><div class="kpi"><b>${usdc(totals.charged - totals.pot)}</b><span>TIN's share</span></div></div>
-  ${grands.map((g) => `<div class="card" style="gap:8px"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><h3 style="margin:0">${esc(g.emoji)} ${esc(g.title)}</h3>${pill(g.status)}</div>
+  ${grands.map((g) => `<div class="card${g.id === hqJustCreated ? ' justmade' : ''}" id="hqg${g.id}" style="gap:8px">${g.id === hqJustCreated ? '<div class="justnote">✨ Just created as a draft. Check it, add quiz questions if you like, then press <b>Go live</b>.</div>' : ''}<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><h3 style="margin:0">${esc(g.emoji)} ${esc(g.title)}</h3>${pill(g.status)}</div>
     <div class="note">${g.sponsor_name ? `🎁 Given by <b>${esc(g.sponsor_name)}</b>: only their videos fill it` : '🏛️ TIN\'s own treasure: filled by every other business video'}</div>
     <div class="gbar"><i style="width:${Math.max(2, Math.min(100, Math.floor(g.pot_cents / g.goal_cents * 100)))}%"></i></div>
     <div class="note"><b>${usdc(g.pot_cents)}</b> of ${usdc(g.goal_cents)} · ${g.views} views · secret spot <a href="https://www.google.com/maps?q=${g.secret_lat},${g.secret_lng}" target="_blank" rel="noopener">📍 ${g.secret_lat.toFixed(5)}, ${g.secret_lng.toFixed(5)} ↗</a> · circle ${g.start_radius_m} m → ${g.final_radius_m} m</div>
@@ -1308,6 +1309,9 @@ HQ.grand = async (el) => {
       ${[10, 30, 50, 70, 90, 100].map((p, i) => `<div class="row" style="gap:8px;align-items:center;margin:4px 0"><input name="cp${i}" type="number" min="0" max="100" value="${p}" style="width:80px" aria-label="Opens at %"><span class="note">%</span><input name="ct${i}" placeholder="Clue ${i + 1}" style="flex:1"></div>`).join('')}</fieldset>
     <button class="sbtn gold">Create (as a draft)</button></form></div>`;
   $$('[data-gs]', el).forEach((b) => (b.onclick = async () => { if (b.dataset.gs === 'closed' && !confirm('Close this Grand Treasure? Explorers will no longer see it.')) return; try { await api(`/api/admin/grand/${b.dataset.id}`, { method: 'PATCH', body: { status: b.dataset.gs } }); hqToast('Updated'); hqRender(); } catch (e) { hqToast(e.message); } }));
+  if (hqJustCreated) { const card = $(`#hqg${hqJustCreated}`, el); if (card) setTimeout(() => card.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50); hqJustCreated = null; }
+  // Enter in a text box must not create the treasure by accident; only the button does.
+  $$('#gf input', el).forEach((i) => i.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); if (i.id === 'gcoords') $('#ggo', el).click(); } }));
   $$('[data-qdel]', el).forEach((b) => (b.onclick = async () => { if (!confirm('Remove this question?')) return; try { await api(`/api/admin/grand/${b.dataset.id}/quiz/${b.dataset.qdel}`, { method: 'DELETE' }); hqRender(); } catch (e) { hqToast(e.message); } }));
   $$('.qform', el).forEach((fm) => (fm.onsubmit = async (e) => {
     e.preventDefault(); const f = Object.fromEntries(new FormData(fm));
@@ -1339,7 +1343,7 @@ HQ.grand = async (el) => {
     e.preventDefault();
     const f = Object.fromEntries(new FormData(e.target));
     const clues = [0, 1, 2, 3, 4, 5].map((i) => ({ pct: Number(f['cp' + i]), text: (f['ct' + i] || '').trim() })).filter((c) => c.text);
-    try { await api('/api/admin/grand', { method: 'POST', body: { title: f.title, emoji: f.emoji, sponsorMerchantId: f.sponsorMerchantId ? Number(f.sponsorMerchantId) : null, prize: f.prize, photo: f.photo, area: f.area, goalUsd: Number(f.goalUsd), startRadius: Number(f.startRadius), finalRadius: Number(f.finalRadius), lat: spot.lat, lng: spot.lng, clues } }); hqToast('Grand Treasure created. Tap Go live when ready.'); hqRender(); }
+    try { const made = await api('/api/admin/grand', { method: 'POST', body: { title: f.title, emoji: f.emoji, sponsorMerchantId: f.sponsorMerchantId ? Number(f.sponsorMerchantId) : null, prize: f.prize, photo: f.photo, area: f.area, goalUsd: Number(f.goalUsd), startRadius: Number(f.startRadius), finalRadius: Number(f.finalRadius), lat: spot.lat, lng: spot.lng, clues } }); hqJustCreated = made.id; hqToast('✨ Created! Scrolled up to your new treasure.'); await hqRender(); }
     catch (err) { hqToast(err.message); }
   };
 };
