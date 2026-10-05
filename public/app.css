@@ -301,3 +301,15 @@ video.scan{width:100%;border-radius:12px;background:#000;aspect-ratio:1;object-f
 .vrow{display:flex;gap:10px;align-items:flex-start}.vrow img{width:96px;height:54px;object-fit:cover;border-radius:8px;flex:none}
 .addvid summary{cursor:pointer;list-style:none}.addvid summary::-webkit-details-marker{display:none}
 
+/* Many Grand Treasures + Polly's quiz */
+.ghead{font-weight:800;color:var(--gold);margin:8px 0 2px}
+.glist{display:grid;gap:8px}
+.gsponsor{display:inline-block;justify-self:start;padding:4px 10px;border-radius:999px;background:rgba(212,160,23,.16);border:1px solid rgba(212,160,23,.5);font-size:.9rem}
+.clue.bonus{background:rgba(120,200,140,.14);border-color:rgba(120,200,140,.55);font-style:normal}
+.quiz .qz{display:grid;gap:6px;padding:10px 0;border-top:1px solid var(--line)}
+.quiz .qq{font-weight:700}
+.quiz .qopts{display:flex;flex-wrap:wrap;gap:6px}
+.quiz .qopts .sbtn{flex:1 1 140px;text-align:left;min-height:44px}
+.quiz .qres.ok{color:#8fe3a6;font-weight:700}.quiz .qres.no{color:#f0a0a0;font-weight:700}
+.qadmin{border-top:1px dashed var(--line);padding-top:8px;display:grid;gap:6px}
+.qadmin .qrow{display:flex;gap:8px;align-items:flex-start;justify-content:space-between;font-size:.9rem}
