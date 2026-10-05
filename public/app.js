@@ -871,19 +871,20 @@ async function merchantVideosCard(box) {
   }));
 }
 
-// Reads "20.6296, -87.0739", "20.6296 -87.0739", "20.6296° N, 87.0739° W" or a Google Maps link.
+// Reads "20.6296, -87.0739", "20.6296 -87.0739", "20.6296° N, 87.0739° W", degrees-minutes-seconds
+// such as 20°30'39.43"N 86°56'59.48"W (Google Earth), degrees-minutes, or a Google Maps link.
 function parseCoords(text) {
-  const t = String(text || '').trim();
+  const t = String(text || '').trim().replace(/[′’´`]/g, "'").replace(/[″“”]|''/g, '"').replace(/º/g, '°');
+  const ok = (lat, lng) => Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 ? { lat, lng } : null;
   const at = t.match(/@(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/) || t.match(/[?&](?:q|query|ll)=(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/);
-  let lat, lng;
-  if (at) { lat = Number(at[1]); lng = Number(at[2]); }
-  else {
-    const m = t.match(/(-?\d+(?:\.\d+)?)\s*°?\s*([NSns])?[\s,;]+(-?\d+(?:\.\d+)?)\s*°?\s*([EWew])?/);
-    if (!m) return null;
-    lat = Number(m[1]) * (/[Ss]/.test(m[2] || '') ? -1 : 1);
-    lng = Number(m[3]) * (/[Ww]/.test(m[4] || '') ? -1 : 1);
-  }
-  return Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 ? { lat, lng } : null;
+  if (at) return ok(Number(at[1]), Number(at[2]));
+  // Degrees with minutes (and seconds): needs a hemisphere letter on each half.
+  const part = (deg, min, sec, hemi) => (Number(deg) + Number(min || 0) / 60 + Number(sec || 0) / 3600) * (/[SsWw]/.test(hemi) ? -1 : 1);
+  const dms = t.match(/(\d+(?:\.\d+)?)\s*\u00b0\s*(?:(\d+(?:\.\d+)?)\s*'\s*)?(?:(\d+(?:\.\d+)?)\s*"\s*)?([NSns])[\s,;]*(\d+(?:\.\d+)?)\s*\u00b0\s*(?:(\d+(?:\.\d+)?)\s*'\s*)?(?:(\d+(?:\.\d+)?)\s*"\s*)?([EWew])/);
+  if (dms) return ok(part(dms[1], dms[2], dms[3], dms[4]), part(dms[5], dms[6], dms[7], dms[8]));
+  const m = t.match(/(-?\d+(?:\.\d+)?)\s*\u00b0?\s*([NSns])?[\s,;]+(-?\d+(?:\.\d+)?)\s*\u00b0?\s*([EWew])?/);
+  if (!m) return null;
+  return ok(Number(m[1]) * (/[Ss]/.test(m[2] || '') ? -1 : 1), Number(m[3]) * (/[Ww]/.test(m[4] || '') ? -1 : 1));
 }
 
 // Map in the treasure form: drag the pin, tap the map, paste coordinates, or jump to "here" / "my business".
@@ -903,7 +904,8 @@ function placePicker(el, d) {
     }, 400);
   };
   const set = (p, pan = true) => { pin = { lat: Number(p.lat), lng: Number(p.lng) }; $('#er').textContent = ''; show(pan); };
-  const jump = () => { const p = parseCoords(input.value); if (!p) { $('#er').textContent = 'Those coordinates were not understood. Use the format 20.6296, -87.0739.'; return; } set(p); };
+  const cmsg = (txt, good) => { const c = $('#cmsg', el); if (c) { c.textContent = txt; c.style.color = good ? '#2fbf71' : '#ff6b6b'; } };
+  const jump = () => { const p = parseCoords(input.value); if (!p) { cmsg('Those coordinates were not understood. Try 20.5110, -86.9499 or 20°30\'39"N 86°56\'59"W.', false); return; } set(p); cmsg(`✓ Pin moved to ${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`, true); };
   $('#cgo', el).onclick = jump;
   input.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); jump(); } };
   input.onpaste = () => setTimeout(() => { if (parseCoords(input.value)) jump(); }, 0);
@@ -948,7 +950,7 @@ function dropForm(el, d) {
       <label style="flex-direction:row;display:flex;gap:6px;align-items:center"><input type="checkbox" id="my" style="width:auto" ${d?.mystery ? 'checked' : ''}> Mystery reward</label></div>
     <fieldset class="place"><legend>Where is the treasure hidden?</legend>
       <p class="note">Drag the pin to the exact spot or tap the map. You can also paste coordinates, for example from Google Maps.</p>
-      <div class="row" style="gap:8px;flex-wrap:wrap"><input id="coords" inputmode="text" autocomplete="off" placeholder="e.g. 20.6296, -87.0739" aria-label="Coordinates: latitude, longitude" style="flex:1;min-width:180px"><button type="button" class="sbtn gold" id="cgo" style="flex:none">Go</button></div>
+      <div class="row" style="gap:8px;flex-wrap:wrap"><input id="coords" inputmode="text" autocomplete="off" placeholder="e.g. 20.6296, -87.0739" aria-label="Coordinates: latitude, longitude" style="flex:1;min-width:180px"><button type="button" class="sbtn gold" id="cgo" style="flex:none">Go</button></div><div id="cmsg" role="status" aria-live="polite" style="min-height:18px;margin:4px 2px 0;font-size:14px;font-weight:700"></div>
       <div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="sbtn" id="pme">📍 Where I'm standing</button><button type="button" class="sbtn" id="pbiz">🏪 At my business</button></div>
       <div class="lmap pmap" id="pmap" role="region" aria-label="Map: drag the pin to place the treasure"></div>
       <p class="note" id="pinfo" role="status"></p>
