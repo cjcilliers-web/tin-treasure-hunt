@@ -338,3 +338,11 @@ video.scan{width:100%;border-radius:12px;background:#000;aspect-ratio:1;object-f
 /* Grand Treasure controls: wrap onto as many lines as needed, nothing runs off screen */
 .row.gctl{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px}
 .row.gctl>*{min-width:0;min-height:44px;white-space:normal;text-align:center;justify-content:center}
+
+/* Grand Treasure ON / OFF switch */
+.onoff{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.onoff .oo{min-width:90px;min-height:48px;padding:8px 18px;border-radius:12px;font-weight:900;font-size:1.05rem;cursor:pointer;border:2px solid var(--line,#2a3a3a);background:transparent;color:var(--text,#e8efe9)}
+.onoff .on-btn.cur{background:#1f9d57;border-color:#1f9d57;color:#fff;cursor:default}
+.onoff .off-btn.cur{background:#c0392b;border-color:#c0392b;color:#fff;cursor:default}
+.onoff .oo:not(.cur):hover{border-color:var(--gold-hi,#e8c25a)}
+.onoff .oo-note{font-weight:700;opacity:.85}
