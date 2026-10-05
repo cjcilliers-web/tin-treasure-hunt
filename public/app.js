@@ -230,53 +230,67 @@ const grandBar = (g) => `<div class="gbar" role="progressbar" aria-valuemin="0" 
 async function grandCard(box) {
   if (!box) return;
   let r; try { r = await api('/api/grand'); } catch { return; }
-  const g = r.grand; if (!g) return;
-  const open = g.clues.filter((c) => !c.locked).length;
-  box.innerHTML = `<button class="grand" id="gopen"><div class="gtop"><span class="gem">${esc(g.emoji)}</span><div><small>GRAND TREASURE${g.area ? ` · ${esc(g.area).toUpperCase()}` : ''}</small><b>${esc(g.title)}</b></div></div>
-    ${grandBar(g)}<div class="gnums"><b>${usdc(g.potCents)}</b> of ${usdc(g.goalCents)} · ${g.views} videos watched · ${open}/${g.clues.length} clues open</div>
-    <span class="gcta">${g.status === 'found' ? '🏆 Found! See who won' : g.status === 'full' ? '🔓 The pot is full! Go find it →' : '▶ Watch a video to unlock clues →'}</span></button>`;
-  $('#gopen', box).onclick = () => go('grand');
+  const list = r.grands || (r.grand ? [r.grand] : []); if (!list.length) return;
+  box.innerHTML = `${list.length > 1 ? `<div class="ghead">🏆 ${list.length} Grand Treasures to hunt</div>` : ''}<div class="glist">${list.map((g) => {
+    const open = g.clues.filter((c) => !c.locked).length;
+    return `<button class="grand" data-gid="${g.id}"><div class="gtop"><span class="gem">${esc(g.emoji)}</span><div><small>GRAND TREASURE${g.sponsor ? ` · BY ${esc(g.sponsor).toUpperCase()}` : g.area ? ` · ${esc(g.area).toUpperCase()}` : ''}</small><b>${esc(g.title)}</b></div></div>
+    ${grandBar(g)}<div class="gnums"><b>${g.pct}%</b> there · ${g.views} videos watched · ${open}/${g.clues.length} clues open${g.quiz && g.quiz.length ? ` · 🦜 ${g.quiz.length}-question quiz` : ''}</div>
+    <span class="gcta">${g.status === 'found' ? '🏆 Found! See who won' : g.status === 'full' ? '🔓 Ready! Go find it →' : '▶ Watch videos to unlock clues →'}</span></button>`;
+  }).join('')}</div>`;
+  $$('[data-gid]', box).forEach((b) => (b.onclick = () => go('grand', Number(b.dataset.gid))));
 }
 
 let grandMap = null;
-VIEWS.grand = async (el) => {
-  const { grand: g } = await api('/api/grand');
+VIEWS.grand = async (el, gid) => {
+  const { grand: g } = await api(gid ? `/api/grand?id=${gid}` : '/api/grand');
   if (!g) { el.innerHTML = '<p class="empty">There is no Grand Treasure right now. A new one is coming soon!</p>'; return; }
   const next = g.clues.find((c) => c.locked);
   el.innerHTML = `<button class="back" id="bk">← Hunt</button>
   <div class="card" style="gap:10px">${g.photo ? `<img class="gphoto" src="${esc(g.photo)}" alt="${esc(g.title)}">` : `<div style="font-size:3rem;text-align:center">${esc(g.emoji)}</div>`}
-    <h2 style="margin:0;font-family:var(--f-display);font-weight:400">${esc(g.title)}</h2>${g.prize ? `<p class="note" style="margin:0">${esc(g.prize)}</p>` : ''}
+    <h2 style="margin:0;font-family:var(--f-display);font-weight:400">${esc(g.title)}</h2>${g.sponsor ? `<div class="gsponsor">🎁 Given by <b>${esc(g.sponsor)}</b></div>` : ''}${g.prize ? `<p class="note" style="margin:0">${esc(g.prize)}</p>` : ''}
     ${grandBar(g)}<div class="gnums"><b>${usdc(g.potCents)}</b> of ${usdc(g.goalCents)} · ${g.views} videos watched</div>
-    <p class="note">Every business video you watch adds ${usdc(g.perViewCents)} to the pot. As it grows, clues open and the search circle on the map gets smaller. When the pot is full, the first person to reach the spot and tap Claim wins!</p>
-    ${g.status === 'live' ? `<button class="btn" id="watch" ${g.mine && !g.mine.todayLeft ? 'disabled' : ''}>▶ Watch a business video${g.mine ? ` (${g.mine.todayLeft} left today)` : ''}</button>` : ''}
+    <p class="note">${g.sponsor ? `Every ${esc(g.sponsor)} video you watch moves this treasure closer.` : `Every business video you watch adds ${usdc(g.perViewCents)} to the pot.`} As it grows, clues open and the search circle on the map gets smaller. When the pot is full, the first person to reach the spot and tap Claim wins!</p>
+    ${g.status === 'live' ? `<button class="btn" id="watch" ${g.mine && !g.mine.todayLeft ? 'disabled' : ''}>▶ Watch ${g.sponsor ? `a ${esc(g.sponsor)}` : 'a business'} video${g.mine ? ` (${g.mine.todayLeft} left today)` : ''}</button>` : ''}
     ${g.status === 'full' ? `<button class="btn gold" id="claim">🔓 I'm at the spot: Claim it!</button><div class="err" id="cer"></div>` : ''}
     ${g.status === 'found' ? `<div class="sum"><span>${g.mine?.won ? `🏆 You found it! Your prize code: <b>${esc(g.mine.claimCode)}</b>. TIN will contact you.` : '🏆 This Grand Treasure has been found!'}</span></div>` : ''}
     ${g.mine ? `<div class="note">You've helped with ${g.mine.views} video${g.mine.views === 1 ? '' : 's'}.</div>` : ''}</div>
   <div class="card" style="gap:8px"><b>🧭 Clues</b>${g.clues.length ? g.clues.map((c) => c.locked ? `<div class="clue locked">🔒 Opens at ${c.pct}%</div>` : `<div class="clue">🗝️ ${esc(c.text)}</div>`).join('') : '<p class="note">Clues will appear here.</p>'}
+    ${(g.quiz || []).filter((q) => q.bonus).map((q) => `<div class="clue bonus">⭐ Bonus clue: ${esc(q.bonus)}</div>`).join('')}
     ${next ? `<div class="note">Next clue at ${next.pct}% (now ${g.pct}%).</div>` : ''}
     <button class="sbtn" id="askp2" style="justify-self:start">🦜 Ask Polly about the Grand Treasure</button></div>
+  ${g.quiz && g.quiz.length && g.status !== 'found' ? `<div class="card quiz" style="gap:10px"><b>🦜 Polly's quiz${g.sponsor ? ` about ${esc(g.sponsor)}` : ''}</b>
+    <p class="note" style="margin:0">Answer right and Polly gives you a bonus clue. One try per question!</p>
+    ${g.quiz.map((q, i) => `<div class="qz" data-q="${q.id}"><div class="qq">${i + 1}. ${esc(q.question)}</div>
+      ${q.answered ? `<div class="qres ${q.correct ? 'ok' : 'no'}">${q.correct ? '✅ Right! Your bonus clue is in the Clues box.' : '❌ Not this time.'}</div>`
+        : `<div class="qopts">${q.options.map((o, k) => `<button class="sbtn" data-q="${q.id}" data-k="${k}">${esc(o)}</button>`).join('')}</div>`}</div>`).join('')}</div>` : ''}
   <div class="card" style="gap:8px"><b>🗺️ Search area</b><div class="lmap" id="gmap" style="height:300px"></div>
     <p class="note">The treasure is somewhere inside the gold circle (about ${g.circle.radius >= 1000 ? `${(g.circle.radius / 1000).toFixed(1)} km` : `${g.circle.radius} m`} across ${g.circle.radius >= 1000 ? '' : 'from the centre'}). It shrinks as the pot grows.</p></div>`;
   $('#bk', el).onclick = () => go('hunt');
   $('#askp2', el).onclick = () => { go('polly'); setTimeout(() => pollyAsk('Tell me about the Grand Treasure clues'), 50); };
-  const w = $('#watch', el); if (w) w.onclick = () => go('video');
+  const w = $('#watch', el); if (w) w.onclick = () => go('video', g.id);
+  $$('.qopts [data-k]', el).forEach((b) => (b.onclick = async () => {
+    $$(`.qopts [data-q="${b.dataset.q}"]`, el).forEach((x) => (x.disabled = true));
+    try { const r = await api(`/api/grand/${g.id}/quiz/${b.dataset.q}`, { method: 'POST', body: { choice: Number(b.dataset.k) } }); toast(r.correct ? '🦜 Right! Bonus clue unlocked.' : '🦜 Not this time!'); render(); }
+    catch (e) { toast(e.message); render(); }
+  }));
   const c = $('#claim', el);
   if (c) c.onclick = () => {
     if (!navigator.geolocation) return ($('#cer').textContent = 'Turn on location to claim.');
     c.disabled = true;
     navigator.geolocation.getCurrentPosition(async (p) => {
-      try { const r = await api('/api/grand/claim', { method: 'POST', body: { lat: p.coords.latitude, lng: p.coords.longitude } }); toast(`🏆 You found ${r.title}!`); render(); }
+      try { const r = await api('/api/grand/claim', { method: 'POST', body: { id: g.id, lat: p.coords.latitude, lng: p.coords.longitude } }); toast(`🏆 You found ${r.title}!`); render(); }
       catch (e) { $('#cer').textContent = e.message; c.disabled = false; }
     }, () => { $('#cer').textContent = 'Turn on location to claim.'; c.disabled = false; }, { enableHighAccuracy: true, timeout: 20000 });
   };
   const draw = () => {
     if (!window.L) { setTimeout(draw, 300); return; }
-    if (grandMap) { grandMap.remove(); grandMap = null; }
+    if (!document.getElementById('gmap')) return;
+    if (grandMap) { try { grandMap.remove(); } catch {} grandMap = null; }
     grandMap = L.map('gmap', { zoomControl: true }).setView([g.circle.lat, g.circle.lng], 14);
     addBaseLayers(grandMap);
     const circ = L.circle([g.circle.lat, g.circle.lng], { radius: g.circle.radius, color: '#d4a017', weight: 3, fillOpacity: 0.12 }).addTo(grandMap);
     if (S.locSource === 'gps') L.marker([S.here.lat, S.here.lng], { icon: L.divIcon({ className: '', html: '<div class="pinx me"></div>', iconSize: [16, 16] }) }).addTo(grandMap);
-    grandMap.fitBounds(circ.getBounds(), { padding: [20, 20] });
+    grandMap.fitBounds(circ.getBounds(), { padding: [20, 20], animate: false });
     setTimeout(() => grandMap && grandMap.invalidateSize(), 60);
   };
   draw();
@@ -292,15 +306,15 @@ const loadYouTube = () => ytReady || (ytReady = new Promise((res, rej) => {
 }));
 
 // Plays one sponsor video for its 15/30 seconds, then shows the sponsor's coupon and the pot.
-VIEWS.video = async (el) => {
-  const { videos } = await api('/api/videos');
-  if (!videos.length) { el.innerHTML = '<button class="back" id="bk">← Grand Treasure</button><p class="empty">You have watched every video for today. Come back tomorrow to help fill the pot!</p>'; $('#bk', el).onclick = () => go('grand'); return; }
+VIEWS.video = async (el, gid) => {
+  const { videos } = await api(gid ? `/api/videos?grand=${gid}` : '/api/videos');
+  if (!videos.length) { el.innerHTML = '<button class="back" id="bk">← Grand Treasure</button><p class="empty">You have watched every video for this treasure today. Come back tomorrow to help fill it!</p>'; $('#bk', el).onclick = () => go('grand', gid); return; }
   const v = videos[0];
   el.innerHTML = `<button class="back" id="bk">← Grand Treasure</button>
     <div class="card" style="gap:10px"><div class="note">From <b>${esc(v.sponsor)}</b></div><h3 style="margin:0">${esc(v.title)}</h3>
     <div class="vid"><div id="yt"></div><div class="vcount" id="vcount">${v.length}</div></div>
     <div class="note" id="vst" role="status">Press play. Watch ${v.length} seconds to add to the pot.</div><div id="vend"></div></div>`;
-  $('#bk', el).onclick = () => go('grand');
+  $('#bk', el).onclick = () => go('grand', gid);
   const st = $('#vst', el), cnt = $('#vcount', el);
   try { await api(`/api/videos/${v.id}/start`, { method: 'POST' }); await loadYouTube(); } catch (e) { st.textContent = e.message; return; }
   let played = 0, timer = null, done = false, player = null;
@@ -1261,17 +1275,29 @@ HQ.videos = async (el) => {
 
 let hqGrandMap = null;
 HQ.grand = async (el) => {
-  const { grands, totals } = await api('/api/admin/grand');
+  const [{ grands, totals }, { merchants }] = await Promise.all([api('/api/admin/grand'), api('/api/admin/merchants')]);
   const pill = (st) => `<span class="pill ${st === 'live' ? 'live' : st === 'found' || st === 'closed' ? 'ended' : 'draft'}">${st === 'full' ? 'pot full' : st}</span>`;
   el.innerHTML = `<div class="hqgrid"><div class="kpi"><b>${totals.views}</b><span>Finished video views${totals.spinViews ? ` (🎰 ${totals.spinViews} in Spin & Win)` : ''}</span></div><div class="kpi"><b>${usdc(totals.charged)}</b><span>Charged to merchants</span></div><div class="kpi"><b>${usdc(totals.pot)}</b><span>Put into pots</span></div><div class="kpi"><b>${usdc(totals.charged - totals.pot)}</b><span>TIN's share</span></div></div>
   ${grands.map((g) => `<div class="card" style="gap:8px"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><h3 style="margin:0">${esc(g.emoji)} ${esc(g.title)}</h3>${pill(g.status)}</div>
+    <div class="note">${g.sponsor_name ? `🎁 Given by <b>${esc(g.sponsor_name)}</b>: only their videos fill it` : '🏛️ TIN\'s own treasure: filled by every other business video'}</div>
     <div class="gbar"><i style="width:${Math.max(2, Math.min(100, Math.floor(g.pot_cents / g.goal_cents * 100)))}%"></i></div>
     <div class="note"><b>${usdc(g.pot_cents)}</b> of ${usdc(g.goal_cents)} · ${g.views} views · secret spot <a href="https://www.google.com/maps?q=${g.secret_lat},${g.secret_lng}" target="_blank" rel="noopener">📍 ${g.secret_lat.toFixed(5)}, ${g.secret_lng.toFixed(5)} ↗</a> · circle ${g.start_radius_m} m → ${g.final_radius_m} m</div>
     ${g.status === 'found' ? `<div class="sum"><span>🏆 Found by <b>${esc(g.finder || '?')}</b> (${esc(g.finder_email || '')}) · code <b>${esc(g.claim_code)}</b> · ${new Date(g.found_at).toLocaleString()}</span></div>` : ''}
     <div class="note">Clues: ${g.clues.map((c) => `<div>• ${c.unlock_pct}%: ${esc(c.text)}</div>`).join('') || 'none'}</div>
-    <div class="row" style="flex-wrap:wrap;gap:8px">${g.status === 'draft' || g.status === 'closed' ? `<button class="sbtn go" data-gs="live" data-id="${g.id}">Go live</button>` : ''}${g.status === 'live' || g.status === 'full' ? `<button class="sbtn stop" data-gs="closed" data-id="${g.id}">Close</button>` : ''}</div></div>`).join('')}
+    <div class="qadmin"><b>🦜 Polly's quiz${g.sponsor_name ? ` about ${esc(g.sponsor_name)}` : ''}</b>
+      ${g.quiz.map((q) => `<div class="qrow"><div>${esc(q.question)}<div class="note">${q.options.map((o, k) => k === q.answer ? `<b>✓ ${esc(o)}</b>` : esc(o)).join(' · ')}<br>⭐ ${esc(q.bonus_clue)} · ${q.rights}/${q.tries} right</div></div><button class="sbtn stop" data-qdel="${q.id}" data-id="${g.id}">Remove</button></div>`).join('') || '<div class="note">No questions yet. Right answers give players a bonus clue.</div>'}
+      ${g.status !== 'found' && g.status !== 'closed' ? `<details><summary class="note" style="cursor:pointer">➕ Add a question</summary><form class="hqform qform" data-id="${g.id}">
+        <label style="grid-column:1/-1">Question<input name="question" required placeholder="In which year did Effy Jewelers open its first store?"></label>
+        ${[0, 1, 2, 3].map((k) => `<label>Answer ${k + 1}${k < 2 ? '' : ' (optional)'}<input name="o${k}" ${k < 2 ? 'required' : ''}></label>`).join('')}
+        <label>Right answer<select name="answer">${[0, 1, 2, 3].map((k) => `<option value="${k}">Answer ${k + 1}</option>`).join('')}</select></label>
+        <label style="grid-column:1/-1">Bonus clue for a right answer<input name="bonus" required placeholder="It sparkles close to where the big ships dock."></label>
+        <button class="sbtn gold">Add question</button></form>
+        <form class="hqform sform" data-id="${g.id}" style="margin-top:8px"><label style="grid-column:1/-1">✨ Or let Polly suggest questions: paste facts about ${g.sponsor_name ? esc(g.sponsor_name) : 'the sponsor'}<textarea name="about" rows="3" placeholder="Founded in 1979 in New York… known for… store on Avenida Rafael Melgar…"></textarea></label><button class="sbtn">🦜 Suggest questions</button><div class="note sout" style="grid-column:1/-1"></div></form></details>` : ''}
+    </div>
+    <div class="row" style="flex-wrap:wrap;gap:8px">${(g.status === 'draft' || g.status === 'closed') && !g.found_by ? `<button class="sbtn go" data-gs="live" data-id="${g.id}">Go live</button>` : ''}${g.status === 'live' || g.status === 'full' ? `<button class="sbtn stop" data-gs="closed" data-id="${g.id}">Close</button>` : ''}</div></div>`).join('')}
   <div class="card"><h3>Create a Grand Treasure</h3><form class="hqform" id="gf">
     <label>Title<input name="title" required placeholder="A brand-new scooter"></label><label>Emoji<input name="emoji" value="🛵"></label>
+    <label style="grid-column:1/-1">Given by (sponsor)<select name="sponsorMerchantId"><option value="">TIN's own treasure (filled by every business video)</option>${merchants.filter((m) => m.status === 'active').map((m) => `<option value="${m.id}">${esc(m.name)} (only their videos fill it)</option>`).join('')}</select></label>
     <label>Prize description<input name="prize" placeholder="Honda Dio 110, red, with helmet"></label><label>Photo link (optional)<input name="photo" placeholder="https://…"></label>
     <label>Area<input name="area" value="${esc(S.dest.name)}"></label><label>Goal (USD) = prize value<input name="goalUsd" type="number" min="1" step="1" required value="700"></label>
     <label>Starting search circle (m)<input name="startRadius" type="number" value="3000"></label><label>Final search circle (m)<input name="finalRadius" type="number" value="40"></label>
@@ -1282,6 +1308,21 @@ HQ.grand = async (el) => {
       ${[10, 30, 50, 70, 90, 100].map((p, i) => `<div class="row" style="gap:8px;align-items:center;margin:4px 0"><input name="cp${i}" type="number" min="0" max="100" value="${p}" style="width:80px" aria-label="Opens at %"><span class="note">%</span><input name="ct${i}" placeholder="Clue ${i + 1}" style="flex:1"></div>`).join('')}</fieldset>
     <button class="sbtn gold">Create (as a draft)</button></form></div>`;
   $$('[data-gs]', el).forEach((b) => (b.onclick = async () => { if (b.dataset.gs === 'closed' && !confirm('Close this Grand Treasure? Explorers will no longer see it.')) return; try { await api(`/api/admin/grand/${b.dataset.id}`, { method: 'PATCH', body: { status: b.dataset.gs } }); hqToast('Updated'); hqRender(); } catch (e) { hqToast(e.message); } }));
+  $$('[data-qdel]', el).forEach((b) => (b.onclick = async () => { if (!confirm('Remove this question?')) return; try { await api(`/api/admin/grand/${b.dataset.id}/quiz/${b.dataset.qdel}`, { method: 'DELETE' }); hqRender(); } catch (e) { hqToast(e.message); } }));
+  $$('.qform', el).forEach((fm) => (fm.onsubmit = async (e) => {
+    e.preventDefault(); const f = Object.fromEntries(new FormData(fm));
+    const options = [f.o0, f.o1, f.o2, f.o3].map((o) => (o || '').trim()).filter(Boolean);
+    try { await api(`/api/admin/grand/${fm.dataset.id}/quiz`, { method: 'POST', body: { question: f.question, options, answer: Number(f.answer), bonus: f.bonus } }); hqToast('Question added'); hqRender(); } catch (err) { hqToast(err.message); }
+  }));
+  $$('.sform', el).forEach((fm) => (fm.onsubmit = async (e) => {
+    e.preventDefault(); const out = $('.sout', fm); out.textContent = '🦜 Polly is thinking…';
+    try {
+      const r = await api(`/api/admin/grand/${fm.dataset.id}/quiz/suggest`, { method: 'POST', body: { about: new FormData(fm).get('about') } });
+      const q = fm.previousElementSibling;
+      out.innerHTML = r.questions.map((x, i) => `<div style="margin:6px 0"><b>${esc(x.question)}</b><br>${x.options.map((o, k) => k === x.answer ? `<b>✓ ${esc(o)}</b>` : esc(o)).join(' · ')} <button type="button" class="sbtn" data-use="${i}">Use this</button></div>`).join('') + '<div>Check each one, add a bonus clue, then press Add question.</div>';
+      $$('[data-use]', out).forEach((b) => (b.onclick = () => { const x = r.questions[Number(b.dataset.use)]; q.question.value = x.question; [0, 1, 2, 3].forEach((k) => (q['o' + k].value = x.options[k] || '')); q.answer.value = String(x.answer); q.bonus.focus(); }));
+    } catch (err) { out.textContent = err.message; }
+  }));
   let spot = { lat: S.dest.lat, lng: S.dest.lng }, mk = null;
   const setSpot = (p) => { spot = { lat: Number(p.lat), lng: Number(p.lng) }; $('#gcoords').value = `${spot.lat.toFixed(6)}, ${spot.lng.toFixed(6)}`; if (mk) mk.setLatLng([spot.lat, spot.lng]); if (hqGrandMap) hqGrandMap.panTo([spot.lat, spot.lng]); };
   const drawMap = () => {
@@ -1298,7 +1339,7 @@ HQ.grand = async (el) => {
     e.preventDefault();
     const f = Object.fromEntries(new FormData(e.target));
     const clues = [0, 1, 2, 3, 4, 5].map((i) => ({ pct: Number(f['cp' + i]), text: (f['ct' + i] || '').trim() })).filter((c) => c.text);
-    try { await api('/api/admin/grand', { method: 'POST', body: { title: f.title, emoji: f.emoji, prize: f.prize, photo: f.photo, area: f.area, goalUsd: Number(f.goalUsd), startRadius: Number(f.startRadius), finalRadius: Number(f.finalRadius), lat: spot.lat, lng: spot.lng, clues } }); hqToast('Grand Treasure created. Tap Go live when ready.'); hqRender(); }
+    try { await api('/api/admin/grand', { method: 'POST', body: { title: f.title, emoji: f.emoji, sponsorMerchantId: f.sponsorMerchantId ? Number(f.sponsorMerchantId) : null, prize: f.prize, photo: f.photo, area: f.area, goalUsd: Number(f.goalUsd), startRadius: Number(f.startRadius), finalRadius: Number(f.finalRadius), lat: spot.lat, lng: spot.lng, clues } }); hqToast('Grand Treasure created. Tap Go live when ready.'); hqRender(); }
     catch (err) { hqToast(err.message); }
   };
 };

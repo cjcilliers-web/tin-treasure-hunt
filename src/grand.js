@@ -189,7 +189,21 @@ export async function adminUpdateVideo(req, env, user, id) {
 // ---------- Grand Treasure ----------
 
 async function liveGrand(env) {
-  return env.DB.prepare(`SELECT * FROM grand_treasures WHERE status IN ('live','full','found') ORDER BY CASE status WHEN 'live' THEN 0 WHEN 'full' THEN 1 ELSE 2 END, id DESC LIMIT 1`).first();
+  return (await liveGrands(env))[0] || null;
+}
+// Every Grand Treasure explorers can see: running ones first, then found ones (until HQ closes them).
+async function liveGrands(env) {
+  const { results } = await env.DB.prepare(`SELECT * FROM grand_treasures WHERE status IN ('live','full','found')
+      ORDER BY CASE status WHEN 'full' THEN 0 WHEN 'live' THEN 1 ELSE 2 END, id DESC LIMIT 20`).all();
+  return results;
+}
+// Which running treasure a finished view fills: the sponsor's own treasure, otherwise TIN's own (house) treasure.
+async function grandForVideo(env, v) {
+  if (v.merchant_id) {
+    const own = await env.DB.prepare(`SELECT id FROM grand_treasures WHERE status = 'live' AND sponsor_merchant_id = ? ORDER BY id DESC LIMIT 1`).bind(v.merchant_id).first();
+    if (own) return own;
+  }
+  return env.DB.prepare(`SELECT id FROM grand_treasures WHERE status = 'live' AND sponsor_merchant_id IS NULL ORDER BY id DESC LIMIT 1`).first();
 }
 
 // Point `dist` metres from (lat,lng) in direction `bearing`.
@@ -214,8 +228,19 @@ async function publicGrand(env, g, user) {
     const d = await env.DB.prepare(`SELECT COUNT(*) n FROM video_watches WHERE user_id = ? AND day = ? AND completed_at IS NOT NULL AND pot_cents > 0`).bind(user.id, today()).first();
     mine = { views: v.n, todayLeft: Math.max(0, s.videoDailyLimit - d.n), won: g.found_by === user.id, claimCode: g.found_by === user.id ? g.claim_code : null };
   }
+  const { results: qs } = await env.DB.prepare('SELECT id, question, options, bonus_clue FROM grand_quiz WHERE grand_id = ? ORDER BY id').bind(g.id).all();
+  const answers = new Map();
+  if (user && qs.length) {
+    const { results: a } = await env.DB.prepare('SELECT quiz_id, choice, correct FROM grand_quiz_answers WHERE grand_id = ? AND user_id = ?').bind(g.id, user.id).all();
+    for (const x of a) answers.set(x.quiz_id, x);
+  }
+  const quiz = qs.map((q) => {
+    const a = answers.get(q.id);
+    return { id: q.id, question: q.question, options: JSON.parse(q.options), answered: !!a, correct: a ? !!a.correct : null, bonus: a && a.correct ? q.bonus_clue : null };
+  });
   return {
     id: g.id, title: g.title, prize: g.prize_text, emoji: g.emoji, photo: g.photo_url, area: g.area_name, status: g.status,
+    sponsor: g.sponsor_name || null, sponsorMerchantId: g.sponsor_merchant_id || null, quiz,
     goalCents: g.goal_cents, potCents: g.pot_cents, views: g.views, pct, perViewCents: s.videoPotShare,
     circle: { lat: centre.lat, lng: centre.lng, radius },
     clues: clues.map((c) => (c.unlock_pct <= pct ? { pct: c.unlock_pct, text: c.text } : { pct: c.unlock_pct, locked: true })),
@@ -224,19 +249,43 @@ async function publicGrand(env, g, user) {
 }
 
 // GET /api/grand — the current Grand Treasure (public)
+// GET /api/grand?id= — all Grand Treasures (public), or one by id
 export async function getGrand(req, env, user) {
-  const g = await liveGrand(env);
-  return json({ grand: g ? await publicGrand(env, g, user) : null });
+  const id = Number(new URL(req.url).searchParams.get('id'));
+  if (id) {
+    const g = await env.DB.prepare(`SELECT * FROM grand_treasures WHERE id = ? AND status IN ('live','full','found')`).bind(id).first();
+    return json({ grand: g ? await publicGrand(env, g, user) : null });
+  }
+  const list = [];
+  for (const g of await liveGrands(env)) list.push(await publicGrand(env, g, user));
+  return json({ grand: list[0] || null, grands: list });
+}
+
+// POST /api/grand/:id/quiz/:qid { choice } — one try per question; a right answer opens the bonus clue
+export async function answerQuiz(req, env, user, id, qid) {
+  requireRole(user);
+  const q = await env.DB.prepare(`SELECT q.*, g.status FROM grand_quiz q JOIN grand_treasures g ON g.id = q.grand_id WHERE q.id = ? AND q.grand_id = ?`).bind(qid, id).first();
+  if (!q || !['live', 'full'].includes(q.status)) bad('This question is not available', 404);
+  const b = await body(req, 300);
+  const options = JSON.parse(q.options);
+  const choice = Number(b.choice);
+  if (!Number.isInteger(choice) || choice < 0 || choice >= options.length) bad('Pick one of the answers');
+  const correct = choice === q.answer ? 1 : 0;
+  const row = await env.DB.prepare(`INSERT INTO grand_quiz_answers(quiz_id, grand_id, user_id, choice, correct) VALUES (?,?,?,?,?)
+      ON CONFLICT(quiz_id, user_id) DO NOTHING RETURNING id`).bind(qid, id, user.id, choice, correct).first();
+  if (!row) bad('You already answered this one', 409);
+  return json({ correct: !!correct, rightAnswer: correct ? choice : null, bonus: correct ? q.bonus_clue : null });
 }
 
 // POST /api/grand/claim { lat, lng } — first explorer at the spot once the pot is full
 export async function claimGrand(req, env, user) {
   requireRole(user);
-  const g = await liveGrand(env);
+  const b = await body(req, 500);
+  const gid = Number(b.id);
+  const g = gid ? await env.DB.prepare(`SELECT * FROM grand_treasures WHERE id = ? AND status IN ('live','full','found')`).bind(gid).first() : await liveGrand(env);
   if (!g) bad('There is no Grand Treasure right now', 404);
   if (g.status === 'live') bad(`The treasure unlocks when the pot is full: ${money(g.pot_cents)} of ${money(g.goal_cents)}. Keep watching!`, 409);
   if (g.status === 'found') bad(g.found_by === user.id ? 'You already found it!' : 'Someone already found this Grand Treasure. Watch for the next one!', 409);
-  const b = await body(req, 500);
   const lat = Number(b.lat), lng = Number(b.lng);
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) bad('Turn on location so we can see you are at the treasure.', 428);
   const away = distanceM(lat, lng, g.secret_lat, g.secret_lng);
@@ -254,10 +303,18 @@ export async function claimGrand(req, env, user) {
 export async function nextVideos(req, env, user) {
   requireRole(user);
   const s = await getSettings(env.DB);
+  // Watching for one treasure: a sponsor's treasure plays only that sponsor's videos; TIN's own
+  // treasure plays every other business (those without a running treasure of their own).
+  const gid = Number(new URL(req.url).searchParams.get('grand'));
+  const g = gid ? await env.DB.prepare('SELECT sponsor_merchant_id FROM grand_treasures WHERE id = ?').bind(gid).first() : null;
+  const only = g && g.sponsor_merchant_id ? 'AND v.merchant_id = ?' : `AND (v.merchant_id IS NULL OR NOT EXISTS (SELECT 1 FROM grand_treasures og WHERE og.status = 'live' AND og.sponsor_merchant_id = v.merchant_id))`;
+  const args = [s.videoPrice30, s.videoPrice15, user.id, today()];
+  if (g && g.sponsor_merchant_id) args.push(g.sponsor_merchant_id);
   const { results } = await env.DB.prepare(`SELECT v.* FROM sponsor_videos v LEFT JOIN merchants m ON m.id = v.merchant_id
       WHERE v.status = 'active' AND (v.merchant_id IS NULL OR (m.status = 'active' AND m.video_balance_cents >= CASE v.length_s WHEN 30 THEN ? ELSE ? END))
         AND NOT EXISTS (SELECT 1 FROM video_watches w WHERE w.video_id = v.id AND w.user_id = ? AND w.day = ? AND w.completed_at IS NOT NULL)
-      LIMIT 50`).bind(s.videoPrice30, s.videoPrice15, user.id, today()).all();
+        ${g ? only : ''}
+      LIMIT 50`).bind(...args).all();
   for (let i = results.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [results[i], results[j]] = [results[j], results[i]]; }
   return json({ videos: results.slice(0, 6).map((v) => ({ id: v.id, sponsor: v.sponsor_name, title: v.title, youtubeId: v.youtube_id, length: v.length_s, link: v.link_url })) });
 }
@@ -296,7 +353,7 @@ export async function completeVideo(req, env, user, id) {
 // counted views today, for the daily limit.
 export async function chargeView(env, v, doneToday) {
   const s = await getSettings(env.DB);
-  const g = await env.DB.prepare(`SELECT id FROM grand_treasures WHERE status = 'live' ORDER BY id DESC LIMIT 1`).first();
+  const g = await grandForVideo(env, v);
   let charged = 0, pot = 0, reason = null;
   if (doneToday >= s.videoDailyLimit) reason = 'daily-limit';
   else {
@@ -335,7 +392,10 @@ export async function adminGrand(req, env, user) {
   const out = [];
   for (const g of results) {
     const { results: clues } = await env.DB.prepare('SELECT id, unlock_pct, text FROM grand_clues WHERE grand_id = ? ORDER BY unlock_pct, id').bind(g.id).all();
-    out.push({ ...g, clues });
+    const { results: quiz } = await env.DB.prepare(`SELECT q.id, q.question, q.options, q.answer, q.bonus_clue,
+        (SELECT COUNT(*) FROM grand_quiz_answers a WHERE a.quiz_id = q.id) AS tries, (SELECT COUNT(*) FROM grand_quiz_answers a WHERE a.quiz_id = q.id AND a.correct = 1) AS rights
+        FROM grand_quiz q WHERE q.grand_id = ? ORDER BY q.id`).bind(g.id).all();
+    out.push({ ...g, clues, quiz: quiz.map((q) => ({ ...q, options: JSON.parse(q.options) })) });
   }
   const s = await getSettings(env.DB);
   const totals = await env.DB.prepare(`SELECT COUNT(*) views, COALESCE(SUM(charged_cents),0) charged, COALESCE(SUM(pot_cents),0) pot FROM (
@@ -357,6 +417,7 @@ function grandInput(b) {
     secret_lat: num(b.lat, { min: -90, max: 90, name: 'Latitude' }), secret_lng: num(b.lng, { min: -180, max: 180, name: 'Longitude' }),
     start_radius_m: num(b.startRadius ?? 3000, { min: 100, max: 50_000, int: true, name: 'Starting search circle (m)' }),
     final_radius_m: num(b.finalRadius ?? 40, { min: 10, max: 2000, int: true, name: 'Final search circle (m)' }),
+    sponsor_merchant_id: b.sponsorMerchantId ? num(b.sponsorMerchantId, { min: 1, int: true, name: 'Sponsor' }) : null,
     clues: clues.slice(0, 20).map((c) => ({ pct: num(c.pct, { min: 0, max: 100, int: true, name: 'Clue %' }), text: str(c.text, { min: 3, max: 300, name: 'Clue' }) })),
   };
 }
@@ -365,10 +426,16 @@ function grandInput(b) {
 export async function adminCreateGrand(req, env, user) {
   requireRole(user, 'admin');
   const d = grandInput(await body(req, 20_000));
+  let sponsorName = null;
+  if (d.sponsor_merchant_id) {
+    const m = await env.DB.prepare('SELECT name FROM merchants WHERE id = ?').bind(d.sponsor_merchant_id).first();
+    if (!m) bad('Sponsor merchant not found');
+    sponsorName = m.name;
+  }
   const bearing = crypto.getRandomValues(new Uint32Array(1))[0] % 360;
   const frac = 0.2 + (crypto.getRandomValues(new Uint32Array(1))[0] / 2 ** 32) * 0.6; // 20–80% of the radius away
-  const g = await env.DB.prepare(`INSERT INTO grand_treasures(title, prize_text, emoji, photo_url, area_name, goal_cents, secret_lat, secret_lng, start_radius_m, final_radius_m, bearing_deg, offset_frac)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`).bind(d.title, d.prize_text, d.emoji, d.photo_url, d.area_name, d.goal_cents, d.secret_lat, d.secret_lng, d.start_radius_m, d.final_radius_m, bearing, frac).first();
+  const g = await env.DB.prepare(`INSERT INTO grand_treasures(title, prize_text, emoji, photo_url, area_name, goal_cents, secret_lat, secret_lng, start_radius_m, final_radius_m, bearing_deg, offset_frac, sponsor_merchant_id, sponsor_name)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`).bind(d.title, d.prize_text, d.emoji, d.photo_url, d.area_name, d.goal_cents, d.secret_lat, d.secret_lng, d.start_radius_m, d.final_radius_m, bearing, frac, d.sponsor_merchant_id, sponsorName).first();
   if (d.clues.length) await env.DB.batch(d.clues.map((c) => env.DB.prepare('INSERT INTO grand_clues(grand_id, unlock_pct, text) VALUES (?,?,?)').bind(g.id, c.pct, c.text)));
   return json({ id: g.id }, 201);
 }
@@ -382,9 +449,9 @@ export async function adminUpdateGrand(req, env, user, id) {
   if (b.status !== undefined) {
     if (!['draft', 'live', 'closed'].includes(b.status)) bad('Status can be draft, live or closed');
     if (b.status === 'live') {
-      const other = await env.DB.prepare(`SELECT id FROM grand_treasures WHERE status IN ('live','full') AND id != ?`).bind(id).first();
-      if (other) bad('Another Grand Treasure is already running. Close it first.');
-      if (g.status === 'found') bad('This one was already found');
+      const other = await env.DB.prepare(`SELECT title FROM grand_treasures WHERE status IN ('live','full') AND id != ? AND COALESCE(sponsor_merchant_id, 0) = ?`).bind(id, g.sponsor_merchant_id || 0).first();
+      if (other) bad(g.sponsor_merchant_id ? `${g.sponsor_name} already has a Grand Treasure running (“${other.title}”). Close it first.` : `TIN's own Grand Treasure “${other.title}” is already running. Close it first, or give this one a sponsor.`);
+      if (g.status === 'found' || g.found_by) bad('This one was already found');
     }
     const status = b.status === 'live' && g.pot_cents >= g.goal_cents ? 'full' : b.status;
     await env.DB.prepare('UPDATE grand_treasures SET status = ? WHERE id = ?').bind(status, id).run();
@@ -403,7 +470,15 @@ export async function adminUpdateGrand(req, env, user, id) {
 
 // For Polly: a short answer about the Grand Treasure.
 export async function grandForPolly(env, lang) {
-  const g = await liveGrand(env);
+  const all = (await liveGrands(env)).filter((x) => x.status !== 'found');
+  if (all.length > 1) {
+    const parts = [];
+    for (const x of all) { const p = await publicGrand(env, x, null); parts.push(`${p.emoji} ${p.title}${p.sponsor ? ` (${lang === 'es' ? 'de' : 'by'} ${p.sponsor})` : ''}: ${p.pct}%`); }
+    return lang === 'es'
+      ? `Hay ${all.length} Grandes Tesoros ahora: ${parts.join(' · ')}. Abre uno para ver sus pistas, mira videos de su patrocinador y responde mi quiz para pistas extra. 🦜`
+      : `There are ${all.length} Grand Treasures right now: ${parts.join(' · ')}. Open one to see its clues, watch its sponsor's videos and answer my quiz for bonus clues. 🦜`;
+  }
+  const g = all[0] || await liveGrand(env);
   if (!g) return lang === 'es' ? 'Ahora no hay un Gran Tesoro. ¡Pronto habrá uno nuevo!' : 'There is no Grand Treasure running right now. A new one is coming soon!';
   const p = await publicGrand(env, g, null);
   if (g.status === 'found') return lang === 'es' ? `🏆 ¡${p.title} ya fue encontrado! Pronto habrá un nuevo Gran Tesoro.` : `🏆 ${p.title} has been found! A new Grand Treasure is coming soon.`;
@@ -413,4 +488,63 @@ export async function grandForPolly(env, lang) {
     return `🛵 ${p.title}: el bote va en ${money(p.potCents)} de ${money(p.goalCents)} (${p.pct}%). ${open.length ? `Pistas abiertas: ${open.map((c) => `“${c.text}”`).join(' ')}` : 'Aún no hay pistas abiertas.'} ${next ? `La siguiente pista se abre al ${next.pct}%.` : ''} Mira videos de negocios locales para hacer crecer el bote y acercar el círculo de búsqueda.`;
   }
   return `🛵 ${p.title}: the pot is at ${money(p.potCents)} of ${money(p.goalCents)} (${p.pct}%). ${open.length ? `Clues so far: ${open.map((c) => `“${c.text}”`).join(' ')}` : 'No clues are open yet.'} ${next ? `The next clue opens at ${next.pct}%.` : p.status === 'full' ? 'The pot is full: be the first to reach the spot and tap Claim!' : ''} Watch local business videos to grow the pot and shrink the search circle.`;
+}
+
+// ---------- Polly's quiz (TIN HQ) ----------
+
+function quizInput(b) {
+  const options = (Array.isArray(b.options) ? b.options : []).map((o) => String(o || '').trim()).filter(Boolean);
+  if (options.length < 2 || options.length > 4) bad('Give 2 to 4 answers');
+  options.forEach((o) => str(o, { min: 1, max: 120, name: 'Answer' }));
+  const answer = Number(b.answer);
+  if (!Number.isInteger(answer) || answer < 0 || answer >= options.length) bad('Mark which answer is right');
+  return { question: str(b.question, { min: 5, max: 200, name: 'Question' }), options, answer, bonus: str(b.bonus, { min: 3, max: 300, name: 'Bonus clue' }) };
+}
+
+// POST /api/admin/grand/:id/quiz { question, options[], answer, bonus }
+export async function adminAddQuiz(req, env, user, id) {
+  requireRole(user, 'admin');
+  const g = await env.DB.prepare('SELECT id FROM grand_treasures WHERE id = ?').bind(id).first();
+  if (!g) bad('Not found', 404);
+  const n = await env.DB.prepare('SELECT COUNT(*) n FROM grand_quiz WHERE grand_id = ?').bind(id).first();
+  if (n.n >= 12) bad('Up to 12 questions per Grand Treasure');
+  const q = quizInput(await body(req, 4_000));
+  const row = await env.DB.prepare('INSERT INTO grand_quiz(grand_id, question, options, answer, bonus_clue) VALUES (?,?,?,?,?) RETURNING id')
+    .bind(id, q.question, JSON.stringify(q.options), q.answer, q.bonus).first();
+  return json({ id: row.id }, 201);
+}
+
+// DELETE /api/admin/grand/:id/quiz/:qid
+export async function adminDeleteQuiz(req, env, user, id, qid) {
+  requireRole(user, 'admin');
+  await env.DB.batch([env.DB.prepare('DELETE FROM grand_quiz_answers WHERE quiz_id = ? AND grand_id = ?').bind(qid, id),
+    env.DB.prepare('DELETE FROM grand_quiz WHERE id = ? AND grand_id = ?').bind(qid, id)]);
+  return json({ ok: true });
+}
+
+// POST /api/admin/grand/:id/quiz/suggest { about } — Polly drafts questions about the sponsor (HQ reviews them)
+export async function adminSuggestQuiz(req, env, user, id) {
+  requireRole(user, 'admin');
+  const g = await env.DB.prepare('SELECT title, sponsor_name, prize_text FROM grand_treasures WHERE id = ?').bind(id).first();
+  if (!g) bad('Not found', 404);
+  if (!env.AI) bad("Polly's AI is not switched on yet, so please type the questions yourself for now.", 503);
+  const b = await body(req, 4_000);
+  const about = str(b.about, { min: 20, max: 2000, name: 'About the sponsor' });
+  const prompt = `You write a fun, family-friendly quiz for a treasure hunt app in Cozumel, Mexico.
+Sponsor: ${g.sponsor_name || 'TIN Commerce'}. Prize: ${g.title}${g.prize_text ? ` (${g.prize_text})` : ''}.
+Facts about the sponsor (use ONLY these facts, never invent any): ${about}
+Write 3 multiple-choice questions about the sponsor, each with 3 short answers and exactly one right answer taken from the facts.
+Reply with JSON only: [{"question":"...","options":["...","...","..."],"answer":0}]`;
+  let text = '';
+  try {
+    const r = await env.AI.run('@cf/meta/llama-3.1-8b-instruct', { messages: [{ role: 'user', content: prompt }], max_tokens: 700 });
+    text = String(r?.response || '');
+  } catch { bad('Polly could not think of questions right now. Please try again.', 502); }
+  let items = [];
+  try { items = JSON.parse(text.slice(text.indexOf('['), text.lastIndexOf(']') + 1)); } catch { items = []; }
+  const out = (Array.isArray(items) ? items : []).map((q) => {
+    try { const v = quizInput({ ...q, bonus: 'Bonus clue' }); return { question: v.question, options: v.options, answer: v.answer }; } catch { return null; }
+  }).filter(Boolean).slice(0, 3);
+  if (!out.length) bad('Polly could not make questions from that text. Add a few more facts and try again.', 422);
+  return json({ questions: out });
 }
