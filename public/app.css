@@ -328,3 +328,8 @@ video.scan{width:100%;border-radius:12px;background:#000;aspect-ratio:1;object-f
 .icon-opt.on{border-color:var(--gold-hi,#e8c25a);background:rgba(217,169,63,.22);box-shadow:0 0 0 2px rgba(217,169,63,.35)}
 .icon-opt:focus-visible{outline:3px solid var(--gold-hi,#e8c25a);outline-offset:2px}
 .icon-own input{font-size:1.4rem}
+
+/* Grand Treasure active / inactive state */
+.gstate{display:inline-flex;align-items:center;padding:6px 12px;border-radius:999px;font-weight:800;font-size:.9rem}
+.gstate.on{background:rgba(47,191,113,.18);color:#2fbf71}
+.gstate.off{background:rgba(255,255,255,.08);color:#b8c4c8}
