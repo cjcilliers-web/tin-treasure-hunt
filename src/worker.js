@@ -8,6 +8,7 @@ import { payDrop, verifyCheckout, stripeWebhook } from './payments.js';
 import { syncTinMerchants, adminSyncTin, publicSyncTin } from './tin-sync.js';
 import { merchantSummary } from './tin-link.js';
 import * as G from './grand.js';
+import { adNetworkVideos, adNetworkView } from './ad-network.js';
 import { myDropCredits, buyCredits, verifyCreditsCheckout, adminGiveCredits } from './credits.js';
 import { getShield, saveShield, shieldCheck, listMessages, actOnMessage } from './shield.js';
 
@@ -87,6 +88,8 @@ const routes = [
   ['POST', /^\/api\/admin\/raffle\/draw$/, (r, e, u) => raffleDrawNow(r, e, u)],
   ['POST', /^\/api\/admin\/sync-tin$/, (r, e, u) => adminSyncTin(r, e, u)],
   ['POST', /^\/api\/tin-sync$/, (r, e) => publicSyncTin(r, e)],
+  ['GET', /^\/api\/ad-network\/videos$/, (r, e) => adNetworkVideos(r, e)],
+  ['POST', /^\/api\/ad-network\/view$/, (r, e) => adNetworkView(r, e)],
   ['POST', /^\/api\/tin\/merchant-summary$/, (r, e) => merchantSummary(r, e)],
 ];
 

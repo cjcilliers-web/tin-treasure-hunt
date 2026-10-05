@@ -120,7 +120,7 @@ export function requireRole(user, ...roles) {
   return user;
 }
 
-// Ask TIN Commerce to redeem a one-time ticket. purpose: 'user-sso' | 'merchant-sso' | 'merchant-summary'.
+// Ask TIN Commerce to redeem a one-time ticket. purpose: 'user-sso' | 'merchant-sso' | 'merchant-summary' | 'ad-view'.
 export async function verifyTinTicket(env, ticket, purpose) {
   if (!/^[A-Za-z0-9_-]{30,64}$/.test(String(ticket || ''))) return null;
   const base = String(env.TIN_COMMERCE_URL || 'https://tincommerce.com').replace(/\/$/, '');
