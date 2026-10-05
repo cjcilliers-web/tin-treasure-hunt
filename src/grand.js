@@ -449,6 +449,8 @@ export async function adminUpdateGrand(req, env, user, id) {
   if (b.status !== undefined) {
     if (!['draft', 'live', 'closed'].includes(b.status)) bad('Status can be draft, live or closed');
     if (b.status === 'live') {
+      // Switching over: the admin confirmed turning the other running one OFF first (it keeps its pot and clues).
+      if (b.replaceRunning === true) await env.DB.prepare(`UPDATE grand_treasures SET status = 'closed' WHERE status IN ('live','full') AND id != ? AND COALESCE(sponsor_merchant_id, 0) = ?`).bind(id, g.sponsor_merchant_id || 0).run();
       const other = await env.DB.prepare(`SELECT title FROM grand_treasures WHERE status IN ('live','full') AND id != ? AND COALESCE(sponsor_merchant_id, 0) = ?`).bind(id, g.sponsor_merchant_id || 0).first();
       if (other) bad(g.sponsor_merchant_id ? `${g.sponsor_name} already has a Grand Treasure running (“${other.title}”). Close it first.` : `TIN's own Grand Treasure “${other.title}” is already running. Close it first, or give this one a sponsor.`);
       if (g.status === 'found' || g.found_by) bad('This one was already found');

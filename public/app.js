@@ -1374,8 +1374,17 @@ HQ.grand = async (el) => {
   $$('[data-gs]', el).forEach((b) => (b.onclick = async () => {
     if (b.dataset.gs === 'closed' && !confirm('Turn this Grand Treasure OFF? Players will not see it until you turn it ON again. Its pot and clues are kept.')) return;
     const label = b.textContent; b.disabled = true; b.textContent = '…';
-    try { await api(`/api/admin/grand/${b.dataset.id}`, { method: 'PATCH', body: { status: b.dataset.gs } }); hqToast(b.dataset.gs === 'live' ? 'ON: players can see it now' : 'OFF: hidden from players'); hqRender(); }
-    catch (e) { b.disabled = false; b.textContent = label; alert(String(e.message || 'Could not change it').replace(/Close it first\.?/, 'Turn that one OFF first, then turn this one ON.')); }
+    const send = (extra) => api(`/api/admin/grand/${b.dataset.id}`, { method: 'PATCH', body: { status: b.dataset.gs, ...extra } });
+    try {
+      try { await send({}); }
+      catch (e) {
+        const m = String(e.message || '').match(/“(.+?)” is already running/);
+        if (b.dataset.gs !== 'live' || !m) throw e;
+        if (!confirm(`Only one Grand Treasure can be ON at a time.\n\nTurn “${m[1]}” OFF and turn this one ON instead?`)) { b.disabled = false; b.textContent = label; return; }
+        await send({ replaceRunning: true });
+      }
+      hqToast(b.dataset.gs === 'live' ? 'ON: players can see it now' : 'OFF: hidden from players'); hqRender();
+    } catch (e) { b.disabled = false; b.textContent = label; alert(String(e.message || 'Could not change it')); }
   }));
   if (hqJustCreated) { const card = $(`#hqg${hqJustCreated}`, el); if (card) setTimeout(() => card.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50); hqJustCreated = null; }
   // Enter in a text box must not create the treasure by accident; only the button does.
