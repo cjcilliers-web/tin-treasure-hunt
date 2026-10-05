@@ -334,3 +334,7 @@ video.scan{width:100%;border-radius:12px;background:#000;aspect-ratio:1;object-f
 .gstate.on{background:rgba(47,191,113,.18);color:#2fbf71}
 .gstate.off{background:rgba(255,255,255,.08);color:#b8c4c8}
 .gstate.off{background:rgba(255,92,92,.15);color:#ff8a8a}
+
+/* Grand Treasure controls: wrap onto as many lines as needed, nothing runs off screen */
+.row.gctl{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px}
+.row.gctl>*{min-width:0;min-height:44px;white-space:normal;text-align:center;justify-content:center}
