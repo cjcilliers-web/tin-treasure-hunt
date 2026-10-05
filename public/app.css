@@ -315,3 +315,7 @@ video.scan{width:100%;border-radius:12px;background:#000;aspect-ratio:1;object-f
 .qadmin .qrow{display:flex;gap:8px;align-items:flex-start;justify-content:space-between;font-size:.9rem}
 .card.justmade{border:2px solid var(--gold);box-shadow:0 0 0 4px rgba(212,160,23,.25)}
 .justnote{padding:8px 10px;border-radius:10px;background:rgba(212,160,23,.18);font-size:.95rem}
+
+/* Back to the TIN Merchant Cockpit from the merchant screen */
+.back-tin{text-decoration:none;white-space:nowrap;font-weight:800}
+.back-tin[hidden]{display:none}
