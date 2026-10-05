@@ -895,6 +895,7 @@ function placePicker(el, d) {
   const info = $('#pinfo', el), input = $('#coords', el);
   const show = (pan) => {
     input.value = `${pin.lat.toFixed(6)}, ${pin.lng.toFixed(6)}`;
+    { const la = $('#clat', el), lo = $('#clng', el); if (la && document.activeElement !== la) la.value = pin.lat.toFixed(6); if (lo && document.activeElement !== lo) lo.value = pin.lng.toFixed(6); }
     const away = haversine(biz, pin);
     info.innerHTML = `${away < 15 ? '🏪 At your business.' : `📏 ${fmtD(Math.round(away))} from your business.`} <a href="https://www.google.com/maps?q=${pin.lat},${pin.lng}" target="_blank" rel="noopener">Check in Google Maps ↗</a>`;
     if (marker) marker.setLatLng([pin.lat, pin.lng]);
@@ -907,6 +908,9 @@ function placePicker(el, d) {
   const cmsg = (txt, good) => { const c = $('#cmsg', el); if (c) { c.textContent = txt; c.style.color = good ? '#2fbf71' : '#ff6b6b'; } };
   const jump = () => { const p = parseCoords(input.value); if (!p) { cmsg('Those coordinates were not understood. Try 20.5110, -86.9499 or 20°30\'39"N 86°56\'59"W.', false); return; } set(p); cmsg(`✓ Pin moved to ${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`, true); };
   $('#cgo', el).onclick = jump;
+  // Separate Latitude / Longitude boxes: Enter or leaving a box moves the pin (decimal or 20°30'39"N style).
+  const jumpLL = () => { const la = $('#clat', el).value.trim(), lo = $('#clng', el).value.trim(); if (!la || !lo) return; const p = parseCoords(`${la}, ${lo}`); if (!p) { cmsg('Latitude or longitude not understood. Example: 20.511204 and -86.949696.', false); return; } set(p); cmsg(`✓ Pin moved to ${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`, true); };
+  ['#clat', '#clng'].forEach((id) => { const f = $(id, el); f.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); jumpLL(); } }; f.onchange = jumpLL; });
   input.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); jump(); } };
   input.onpaste = () => setTimeout(() => { if (parseCoords(input.value)) jump(); }, 0);
   $('#pbiz', el).onclick = () => set(biz);
@@ -950,7 +954,7 @@ function dropForm(el, d) {
       <label style="flex-direction:row;display:flex;gap:6px;align-items:center"><input type="checkbox" id="my" style="width:auto" ${d?.mystery ? 'checked' : ''}> Mystery reward</label></div>
     <fieldset class="place"><legend>Where is the treasure hidden?</legend>
       <p class="note">Drag the pin to the exact spot or tap the map. You can also paste coordinates, for example from Google Maps.</p>
-      <div class="row" style="gap:8px;flex-wrap:wrap"><input id="coords" inputmode="text" autocomplete="off" placeholder="e.g. 20.6296, -87.0739" aria-label="Coordinates: latitude, longitude" style="flex:1;min-width:180px"><button type="button" class="sbtn gold" id="cgo" style="flex:none">Go</button></div><div id="cmsg" role="status" aria-live="polite" style="min-height:18px;margin:4px 2px 0;font-size:14px;font-weight:700"></div>
+      <div class="row" style="gap:8px;flex-wrap:wrap"><input id="coords" inputmode="text" autocomplete="off" placeholder="e.g. 20.6296, -87.0739" aria-label="Coordinates: latitude, longitude" style="flex:1;min-width:180px"><button type="button" class="sbtn gold" id="cgo" style="flex:none">Go</button></div><div class="row" style="gap:8px;flex-wrap:wrap;margin-top:6px"><label style="flex:1;min-width:140px;display:flex;flex-direction:column;gap:4px;font-weight:700">Latitude<input id="clat" inputmode="decimal" autocomplete="off" placeholder="20.511204" aria-label="Latitude"></label><label style="flex:1;min-width:140px;display:flex;flex-direction:column;gap:4px;font-weight:700">Longitude<input id="clng" inputmode="decimal" autocomplete="off" placeholder="-86.949696" aria-label="Longitude"></label></div><div id="cmsg" role="status" aria-live="polite" style="min-height:18px;margin:4px 2px 0;font-size:14px;font-weight:700"></div>
       <div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="sbtn" id="pme">📍 Where I'm standing</button><button type="button" class="sbtn" id="pbiz">🏪 At my business</button></div>
       <div class="lmap pmap" id="pmap" role="region" aria-label="Map: drag the pin to place the treasure"></div>
       <p class="note" id="pinfo" role="status"></p>
