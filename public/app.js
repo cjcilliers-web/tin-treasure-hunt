@@ -166,6 +166,7 @@ async function refreshCredits() {
 function setMode(m, first) {
   if (S.merchantOnly) m = 'merchant';
   S.mode = m; saveUi();
+  { const back = $('#backTin'); if (back) back.hidden = m !== 'merchant'; }
   $$('#viewsw [data-mode]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === m)));
   $('#phone').hidden = m === 'hq';
   $('#hq').hidden = m !== 'hq';
@@ -910,7 +911,7 @@ function placePicker(el, d) {
   $('#cgo', el).onclick = jump;
   // Separate Latitude / Longitude boxes: Enter or leaving a box moves the pin (decimal or 20°30'39"N style).
   const jumpLL = () => { const la = $('#clat', el).value.trim(), lo = $('#clng', el).value.trim(); if (!la || !lo) return; const p = parseCoords(`${la}, ${lo}`); if (!p) { cmsg('Latitude or longitude not understood. Example: 20.511204 and -86.949696.', false); return; } set(p); cmsg(`✓ Pin moved to ${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`, true); };
-  ['#clat', '#clng'].forEach((id) => { const f = $(id, el); f.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); jumpLL(); } }; f.onchange = jumpLL; });
+  ['#clat', '#clng'].forEach((id) => { const f = $(id, el); f.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); jumpLL(); } }; f.onchange = jumpLL; f.onpaste = () => setTimeout(jumpLL, 0); });
   input.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); jump(); } };
   input.onpaste = () => setTimeout(() => { if (parseCoords(input.value)) jump(); }, 0);
   $('#pbiz', el).onclick = () => set(biz);
