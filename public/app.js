@@ -242,7 +242,11 @@ const NAVS = {
 };
 
 function go(view, arg = null) {
-  if (view === 'detail' && S.view !== 'detail' && S.view !== 'qr') S.backTo = S.view;
+  // Opening a treasure: remember exactly where the explorer was (screen position, map view).
+  if (view === 'detail' && S.view !== 'detail' && S.view !== 'qr') {
+    S.backTo = S.view; S.backScroll = $('#screen')?.scrollTop || 0;
+    S.backMap = S.view === 'map' && leafletMap ? { c: leafletMap.getCenter(), z: leafletMap.getZoom() } : null;
+  }
   S.view = view; S.arg = arg;
   if (S.poll) { clearInterval(S.poll); S.poll = null; }
   stopCamera();
@@ -254,7 +258,7 @@ function render() {
   const nav = NAVS[S.mode] || NAVS.traveler;
   const navEl = $('#nav');
   navEl.style.gridTemplateColumns = `repeat(${nav.length},1fr)`;
-  const active = { detail: 'hunt', qr: 'claims', rate: 'claims', mNew: 'mList', mEdit: 'mList', account: 'wallet' }[S.view] || S.view;
+  const active = { detail: S.backTo || 'hunt', qr: 'claims', rate: 'claims', mNew: 'mList', mEdit: 'mList', account: 'wallet' }[S.view] || S.view;
   navEl.innerHTML = nav.map(([v, l, i]) => `<button data-go="${v}" class="nav-${v}" ${v === active ? 'aria-current="page"' : ''}>${ico(i)}${l}${v === 'mMsg' && S.msgBadge ? `<span class="badge" aria-label="${S.msgBadge} new">${S.msgBadge}</span>` : ''}</button>`).join('');
   $$('#nav [data-go]').forEach((b) => (b.onclick = () => go(b.dataset.go)));
   // Each render gets a fresh pane, so a slow earlier view can never overwrite a newer one.
@@ -265,7 +269,13 @@ function render() {
   screen.replaceChildren(el);
   screen.scrollTop = 0;
   const fn = VIEWS[S.view];
-  Promise.resolve(fn ? fn(el, S.arg) : null).catch((e) => {
+  Promise.resolve(fn ? fn(el, S.arg) : null).then(() => {
+    // Back from a treasure: return to the same spot on the page.
+    if (S.restoreScroll != null) {
+      const y = S.restoreScroll; S.restoreScroll = null;
+      requestAnimationFrame(() => { screen.scrollTop = y; setTimeout(() => { if (screen.scrollTop < y - 5) screen.scrollTop = y; }, 350); });
+    }
+  }).catch((e) => {
     if (e.status === 401) { location.href = '/'; return; }
     el.innerHTML = `<p class="empty">${esc(e.message)}</p><button class="btn ghost" id="retry">Try again</button>`;
     $('#retry', el).onclick = render;
@@ -462,7 +472,8 @@ VIEWS.map = async (el) => {
     <p class="legend">Gold pins are live treasures. ⭐⭐ Medium treasures show a search circle. ${data.drops.some((d) => d.hidden === 'secret') ? `⭐⭐⭐ ${data.drops.filter((d) => d.hidden === 'secret').length} secret treasure(s) are not on the map: find them on the Hunt list and follow the hot/cold hints. ` : ''}Tap one for details. ${S.locSource === 'gps' ? 'The teal dot is you.' : 'Turn on location to see yourself on the map.'}</p>`;
   if (!window.L) { $('#lmap').innerHTML = '<p class="empty">Map is loading, try again in a moment.</p>'; return; }
   if (leafletMap) { leafletMap.remove(); leafletMap = null; }
-  leafletMap = L.map('lmap', { zoomControl: true }).setView([S.here.lat, S.here.lng], 14);
+  const keep = S.restoreMap; S.restoreMap = null;
+  leafletMap = L.map('lmap', { zoomControl: true }).setView(keep ? keep.c : [S.here.lat, S.here.lng], keep ? keep.z : 14);
   // OpenStreetMap tiles (no API key needed), darkened with CSS to match the app.
   addBaseLayers(leafletMap);
   if (S.locSource === 'gps') L.marker([S.here.lat, S.here.lng], { icon: L.divIcon({ className: '', html: '<div class="pinx me"></div>', iconSize: [16, 16] }) }).addTo(leafletMap);
@@ -477,7 +488,7 @@ VIEWS.map = async (el) => {
       .bindPopup(pop);
   });
   leafletMap.on('popupopen', (e) => { const b = e.popup.getElement().querySelector('[data-open]'); if (b) b.onclick = () => go('detail', Number(b.dataset.open)); });
-  if (pts.length && S.locSource !== 'gps') leafletMap.fitBounds(pts, { padding: [30, 30], maxZoom: 15 });
+  if (!keep && pts.length && S.locSource !== 'gps') leafletMap.fitBounds(pts, { padding: [30, 30], maxZoom: 15 });
   setTimeout(() => leafletMap && leafletMap.invalidateSize(), 50);
 };
 
@@ -564,8 +575,9 @@ VIEWS.detail = async (el, id) => {
     `<div class="gate" id="gate"></div><button class="btn" id="claim">Claim this treasure</button>`}
   ${d.hidden === 'secret' ? '' : `<a class="btn ghost" href="${dirUrl}" target="_blank" rel="noopener">${d.hidden === 'circle' ? 'Directions to the search circle' : 'Walking directions'}</a>`}`;
   wireGallery(el);
-  $('#bk', el).onclick = () => go(back);
-  $('#xc', el).onclick = () => go(back);
+  const goBack = () => { S.restoreScroll = S.backScroll || 0; S.restoreMap = S.backMap || null; go(back); };
+  $('#bk', el).onclick = goBack;
+  $('#xc', el).onclick = goBack;
   const c = $('#claim', el);
   if (c) {
     S.gate = () => claimGate(d, c);
