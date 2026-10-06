@@ -738,11 +738,11 @@ VIEWS.polly = async (el) => {
     <div class="vstate" id="vstate">${esc(VU.tap)}</div>
     <div class="vtoggles"><label><input type="checkbox" id="vhands" ${V.hands ? 'checked' : ''}> ${esc(VU.hands)}</label><label><input type="checkbox" id="vspeak" ${V.speak ? 'checked' : ''}> 🔊 ${esc(VU.speak)}</label></div>
   </div>
-  <div class="chat" id="chat" aria-live="polite"></div>
   <div class="chips psugg">${sugg.map((s) => `<button class="chip" data-s="${esc(s)}">💬 ${esc(s)}</button>`).join('')}</div>
+  <div class="chat" id="chat" aria-live="polite"></div>
   <form class="ask" id="askf"><button type="button" class="mic sm" id="mic2" aria-label="${esc(VU.tap)}"><span class="micico">🎤</span></button><input id="q" placeholder="${esc(PL().ph)}" autocomplete="off" aria-label="Ask Polly"><button>Ask</button></form>`;
   drawChat();
-  $$('[data-s]', el).forEach((b) => (b.onclick = () => pollyAsk(b.dataset.s)));
+  $$('[data-s]', el).forEach((b) => (b.onclick = () => { unlockAudio(); pollyAsk(b.dataset.s, true); }));
   $('#askf', el).onsubmit = (e) => { e.preventDefault(); const q = $('#q').value.trim(); if (q) { $('#q').value = ''; pollyAsk(q); } };
   $('#mic2', el).onclick = micTap;
   $$('[data-lang]', el).forEach((b) => (b.onclick = () => {
@@ -898,7 +898,9 @@ function drawChat() {
   const c = $('#chat'); if (!c) return;
   c.innerHTML = S.chat.map((m) => `<div class="msg ${m.p ? 'p' : 'u'}">${esc(m.t)}${m.drops?.length ? `<div class="mini">${m.drops.map((d) => `<button data-d="${d.id}">${d.n ? `<b>${d.n}.</b> ` : ''}${tIco(d)} ${esc(d.title)} · ${d.secret ? '🔒 secret spot' : fmtD(d.distanceM)}</button>`).join('')}</div>` : ''}</div>`).join('');
   $$('[data-d]', c).forEach((b) => (b.onclick = () => { voiceStop(); go('detail', Number(b.dataset.d)); }));
-  const scr = $('#screen'); scr.scrollTop = scr.scrollHeight;
+  // Show the newest message (Polly's answer) where the explorer is looking.
+  const last = c.lastElementChild;
+  if (last) requestAnimationFrame(() => last.scrollIntoView({ behavior: 'smooth', block: 'center' }));
 }
 
 async function pollyAsk(q, byVoice = false) {
