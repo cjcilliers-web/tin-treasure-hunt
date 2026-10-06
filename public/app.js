@@ -754,7 +754,7 @@ const VOICE_UI = {
 const pollyPref = (k, d) => { try { const v = localStorage.getItem('polly_' + k); return v === null ? d : JSON.parse(v); } catch { return d; } };
 const pollySave = (k, v) => { try { localStorage.setItem('polly_' + k, JSON.stringify(v)); } catch {} };
 const pollyLang = () => { const l = S.pollyLang || pollyPref('lang', null) || S.me?.language; return POLLY_UI[l] ? l : 'en'; };
-const PL = () => ({ code: pollyLang(), ...POLLY_UI[pollyLang()] });
+const PL = () => { const code = pollyLang(); const ui = POLLY_UI[code]; return { code, ...ui, sugg: (S.pollySugg && S.pollySugg[code] && S.pollySugg[code].length) ? S.pollySugg[code] : ui.sugg }; };
 const V = { state: 'idle', rec: null, media: null, hands: pollyPref('hands', true), speak: pollyPref('speak', true) };
 
 // Polly greets the signed-in explorer by first name and offers help, in the chosen language.
@@ -781,11 +781,11 @@ VIEWS.polly = async (el) => {
     <div class="vstate" id="vstate">${esc(VU.tap)}</div>
     <div class="vtoggles"><label><input type="checkbox" id="vhands" ${V.hands ? 'checked' : ''}> ${esc(VU.hands)}</label><label><input type="checkbox" id="vspeak" ${V.speak ? 'checked' : ''}> 🔊 ${esc(VU.speak)}</label></div>
   </div>
-  <div class="chips psugg">${sugg.map((s) => `<button class="chip" data-s="${esc(s)}">💬 ${esc(s)}</button>`).join('')}</div>
+  <div class="chips psugg" id="psugg">${suggHtml(sugg)}</div>
   <div class="chat" id="chat" aria-live="polite"></div>
   <form class="ask" id="askf"><button type="button" class="mic sm" id="mic2" aria-label="${esc(VU.tap)}"><span class="micico">🎤</span></button><input id="q" placeholder="${esc(PL().ph)}" autocomplete="off" aria-label="Ask Polly"><button>Ask</button></form>`;
   drawChat(false);
-  $$('[data-s]', el).forEach((b) => (b.onclick = () => { unlockAudio(); pollyAsk(b.dataset.s, true); }));
+  wireSugg(el);
   $('#askf', el).onsubmit = (e) => { e.preventDefault(); const q = $('#q').value.trim(); if (q) { $('#q').value = ''; pollyAsk(q); } };
   $('#mic2', el).onclick = micTap;
   $$('[data-lang]', el).forEach((b) => (b.onclick = () => {
@@ -812,9 +812,15 @@ document.addEventListener('pointerdown', (e) => {
 }, true);
 
 /* ---------- Polly Credits ---------- */
+const suggHtml = (list) => list.map((x) => `<button class="chip" data-s="${esc(x)}">${esc(x)}</button>`).join('');
+function wireSugg(root) { $$('[data-s]', root).forEach((b) => (b.onclick = () => { unlockAudio(); pollyAsk(b.dataset.s, true); })); }
 function showPollyCredits(n) { S.pollyCredits = n; const b = $('#pcb'); if (b) b.textContent = n == null ? '…' : Number(n).toLocaleString(); const c = $('#pcred'); if (c) c.classList.toggle('low', n != null && n < 10); }
 async function loadPollyCredits() {
-  try { const r = await api('/api/polly/credits'); S.pollyPacks = r.packs; S.pollyPay = r.payments; showPollyCredits(r.credits); } catch {}
+  try {
+    const r = await api('/api/polly/credits'); S.pollyPacks = r.packs; S.pollyPay = r.payments; showPollyCredits(r.credits);
+    // Suggestion buttons as set by TIN HQ
+    if (r.suggestions) { const before = JSON.stringify(PL().sugg); S.pollySugg = r.suggestions; const box = $('#psugg'); if (box && JSON.stringify(PL().sugg) !== before) { box.innerHTML = suggHtml(PL().sugg); wireSugg(box); } }
+  } catch {}
 }
 function showTopup(reason) {
   const box = $('#ptopbox'); if (!box) return;
@@ -1905,9 +1911,15 @@ HQ.polly = async (el) => {
       <label>Starting Polly Credits for each new explorer<input name="start" type="number" min="0" value="${d.settings.startCredits}"></label>
       ${d.settings.packs.map((p, i) => `<label>Top-up pack ${i + 1}: credits<input name="c${i}" type="number" min="1" value="${p.credits}"></label><label>Pack ${i + 1}: price (USD)<input name="u${i}" type="number" min="0.5" step="0.5" value="${p.usd}"></label>`).join('')}
       <button class="sbtn gold">Save</button></form></div>
+    <div class="card"><h3>💬 Polly's suggestion buttons</h3><p class="note" style="margin:0 0 8px">One question per line. Explorers tap these instead of typing. Up to 12 per language.</p><form class="hqform" id="psug">
+      ${[['en', '🇺🇸 English'], ['es', '🇲🇽 Español'], ['pt', '🇧🇷 Português'], ['fr', '🇫🇷 Français'], ['de', '🇩🇪 Deutsch']].map(([l, n]) => `<label style="grid-column:1/-1">${n}<textarea name="${l}" rows="6">${esc((d.settings.suggestions?.[l] || []).join('\n'))}</textarea></label>`).join('')}
+      <button class="sbtn gold">Save suggestions</button></form></div>
     <div class="card" style="gap:6px"><h3>Polly Admin wallet</h3>${d.wallet.entries.map((w) => `<div class="note">${new Date(w.created_at).toLocaleString()} · <b>$${Number(w.amount_usd).toFixed(2)}</b> · ${esc(w.reason)} · ${esc(w.note || '')}</div>`).join('') || '<p class="note">No entries yet. Top-ups land here.</p>'}</div>`;
   $('#pgive', el).onsubmit = async (e) => { e.preventDefault(); const f = Object.fromEntries(new FormData(e.target));
     try { const r = await api('/api/admin/polly/credits', { method: 'POST', body: { email: f.email, credits: Number(f.credits) } }); hqToast(`Done. They now have ${r.credits} Polly Credits.`); HQ.polly(el); } catch (er) { hqToast(er.message); } };
+  $('#psug', el).onsubmit = async (e) => { e.preventDefault(); const f = Object.fromEntries(new FormData(e.target));
+    const suggestions = Object.fromEntries(['en', 'es', 'pt', 'fr', 'de'].map((l) => [l, String(f[l] || '').split('\n').map((x) => x.trim()).filter(Boolean)]));
+    try { await api('/api/admin/polly/settings', { method: 'PUT', body: { suggestions } }); S.pollySugg = null; hqToast('Suggestions saved'); HQ.polly(el); } catch (er) { hqToast(er.message); } };
   $('#pset', el).onsubmit = async (e) => { e.preventDefault(); const f = Object.fromEntries(new FormData(e.target));
     const packs = d.settings.packs.map((_, i) => ({ credits: Number(f[`c${i}`]), usd: Number(f[`u${i}`]) }));
     try { await api('/api/admin/polly/settings', { method: 'PUT', body: { startCredits: Number(f.start), packs } }); hqToast('Saved'); HQ.polly(el); } catch (er) { hqToast(er.message); } };
