@@ -411,3 +411,22 @@ export async function pollySpeak(req, env, user) {
   console.log('polly voice failed', JSON.stringify(errors));
   return json({ error: 'Polly’s voice is resting right now.', detail: errors.join(' | ') }, 502);
 }
+
+// GET /api/polly/voice-status — tells whether Polly's natural voice works right now and, if not,
+// the reason Cloudflare gives (e.g. daily allowance used up). One short test, cached for 2 minutes.
+export async function voiceStatus(req, env) {
+  const cache = caches.default, key = new Request('https://hunt.tincommerce.com/__voice_status_v1');
+  const hit = await cache.match(key); if (hit) return hit;
+  const out = { ok: false, checkedAt: new Date().toISOString(), results: [] };
+  if (!env.AI) out.results.push({ model: 'none', error: 'AI binding missing' });
+  else for (const [model, opts] of VOICES.en) {
+    try {
+      const input = model.includes('melotts') ? { prompt: 'Hello', ...opts } : { text: 'Hello', encoding: 'mp3', ...opts };
+      const r = await audioResponse(await env.AI.run(model, input));
+      out.results.push({ model, ok: !!r }); if (r) { out.ok = true; break; }
+    } catch (e) { out.results.push({ model, error: String(e && e.message || e).slice(0, 300) }); }
+  }
+  const res = json(out, 200, { 'cache-control': 'public, max-age=120' });
+  await cache.put(key, res.clone());
+  return res;
+}
