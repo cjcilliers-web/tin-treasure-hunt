@@ -196,7 +196,7 @@ function render() {
   const navEl = $('#nav');
   navEl.style.gridTemplateColumns = `repeat(${nav.length},1fr)`;
   const active = { detail: 'hunt', qr: 'claims', rate: 'claims', mNew: 'mList', mEdit: 'mList', account: 'wallet' }[S.view] || S.view;
-  navEl.innerHTML = nav.map(([v, l, i]) => `<button data-go="${v}" ${v === active ? 'aria-current="page"' : ''}>${ico(i)}${l}${v === 'mMsg' && S.msgBadge ? `<span class="badge" aria-label="${S.msgBadge} new">${S.msgBadge}</span>` : ''}</button>`).join('');
+  navEl.innerHTML = nav.map(([v, l, i]) => `<button data-go="${v}" class="nav-${v}" ${v === active ? 'aria-current="page"' : ''}>${ico(i)}${l}${v === 'mMsg' && S.msgBadge ? `<span class="badge" aria-label="${S.msgBadge} new">${S.msgBadge}</span>` : ''}</button>`).join('');
   $$('#nav [data-go]').forEach((b) => (b.onclick = () => go(b.dataset.go)));
   // Each render gets a fresh pane, so a slow earlier view can never overwrite a newer one.
   const screen = $('#screen');

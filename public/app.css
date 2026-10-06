@@ -377,3 +377,19 @@ video.scan{width:100%;border-radius:12px;background:#000;aspect-ratio:1;object-f
 .icon-drop.on{border-style:solid;border-color:var(--sea)}
 .icon-drop-art{width:64px;height:64px;flex:none;display:grid;place-items:center;font-size:2rem;border-radius:12px;background:#0e1c1b}
 .icon-drop-art img{width:56px;height:56px;object-fit:contain}
+
+/* Bottom buttons: easier to see. The Map button glows and changes colour. */
+.nav{background:linear-gradient(180deg,#0f2523,#081413);border-top:2px solid rgba(217,169,63,.55);box-shadow:0 -6px 18px rgba(217,169,63,.12)}
+.nav button{font-size:.8rem;font-weight:700;color:#d6e6e2;padding:9px 4px 12px}
+.nav button svg{width:26px;height:26px}
+.nav button[aria-current="page"]{color:var(--gold)}
+.nav .nav-map svg{border-radius:50%;padding:5px;width:36px;height:36px;margin-top:-6px;color:#fff;animation:mapGlow 3s linear infinite}
+.nav .nav-map{animation:mapText 3s linear infinite}
+@keyframes mapGlow{
+  0%{background:#d9a93f;box-shadow:0 0 6px 2px rgba(217,169,63,.9),0 0 16px 4px rgba(217,169,63,.5)}
+  25%{background:#3fb6a8;box-shadow:0 0 6px 2px rgba(63,182,168,.9),0 0 16px 4px rgba(63,182,168,.5)}
+  50%{background:#e0468f;box-shadow:0 0 6px 2px rgba(224,70,143,.9),0 0 16px 4px rgba(224,70,143,.5)}
+  75%{background:#7b5cff;box-shadow:0 0 6px 2px rgba(123,92,255,.9),0 0 16px 4px rgba(123,92,255,.5)}
+  100%{background:#d9a93f;box-shadow:0 0 6px 2px rgba(217,169,63,.9),0 0 16px 4px rgba(217,169,63,.5)}}
+@keyframes mapText{0%,100%{color:#f2c45a}25%{color:#5fe0d0}50%{color:#ff7ab8}75%{color:#a993ff}}
+@media (prefers-reduced-motion:reduce){.nav .nav-map svg{animation:none;background:#d9a93f;box-shadow:0 0 10px rgba(217,169,63,.8)}.nav .nav-map{animation:none;color:#f2c45a}}
