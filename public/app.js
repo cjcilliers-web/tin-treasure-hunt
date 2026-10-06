@@ -706,8 +706,20 @@ const pollyLang = () => { const l = S.pollyLang || pollyPref('lang', null) || S.
 const PL = () => ({ code: pollyLang(), ...POLLY_UI[pollyLang()] });
 const V = { state: 'idle', rec: null, media: null, hands: pollyPref('hands', true), speak: pollyPref('speak', true) };
 
+// Polly greets the signed-in explorer by first name and offers help, in the chosen language.
+const POLLY_GREET = {
+  en: (n) => `Hello ${n}! I'm Polly, your treasure guide. What can I do for you today? I can find treasures near you, plan a hunt for the time you have, tell you what's open now, or check your credits. Just tap the microphone and talk to me.`,
+  es: (n) => `¡Hola ${n}! Soy Polly, tu guía de tesoros. ¿Qué puedo hacer por ti hoy? Puedo encontrar tesoros cerca de ti, planear una búsqueda para el tiempo que tengas, decirte qué está abierto ahora o revisar tus créditos. Toca el micrófono y háblame.`,
+  pt: (n) => `Olá ${n}! Sou a Polly, sua guia de tesouros. O que posso fazer por você hoje? Posso achar tesouros perto de você, planejar uma caça para o tempo que você tem, dizer o que está aberto agora ou ver seus créditos. Toque no microfone e fale comigo.`,
+  fr: (n) => `Bonjour ${n} ! Je suis Polly, votre guide des trésors. Que puis-je faire pour vous aujourd'hui ? Je peux trouver des trésors près de vous, préparer une chasse selon votre temps, vous dire ce qui est ouvert ou vérifier vos crédits. Touchez le micro et parlez-moi.`,
+  de: (n) => `Hallo ${n}! Ich bin Polly, deine Schatzführerin. Was kann ich heute für dich tun? Ich finde Schätze in deiner Nähe, plane eine Suche für deine Zeit, sage dir, was jetzt geöffnet ist, oder prüfe deine Credits. Tippe aufs Mikrofon und sprich mit mir.`,
+};
+const firstName = () => String(S.me?.name || '').trim().split(/\s+/)[0] || { en: 'explorer', es: 'explorador', pt: 'explorador', fr: 'explorateur', de: 'Entdecker' }[PL().code];
+const pollyGreeting = () => POLLY_GREET[PL().code](firstName());
+
 VIEWS.polly = async (el) => {
-  if (!S.chat.length) S.chat.push({ p: true, t: PL().hello });
+  const fresh = !S.chat.length;
+  if (fresh) S.chat.push({ p: true, t: pollyGreeting(), greet: true });
   const sugg = PL().sugg, VU = VOICE_UI[PL().code];
   el.innerHTML = `<div class="pollyhead"><span class="parrot">🦜</span><div><b>Polly Pal Live Talk</b><div class="note">Knows where you are, what's live and your credits</div></div></div>
   <div class="plangs" role="group" aria-label="Polly's language">${POLLY_LANGS.map(([c, f, n]) => `<button class="${c === PL().code ? 'on' : ''}" data-lang="${c}" title="${n}">${f} <span>${n}</span></button>`).join('')}</div>
@@ -726,12 +738,15 @@ VIEWS.polly = async (el) => {
   $$('[data-lang]', el).forEach((b) => (b.onclick = () => {
     voiceStop(); S.pollyLang = b.dataset.lang; pollySave('lang', S.pollyLang);
     if (S.chat.length === 1 && S.chat[0].p) S.chat = [];
+    else S.chat.push({ p: true, t: pollyGreeting(), greet: true });
     render();
   }));
   $('#vhands', el).onchange = (e) => { V.hands = e.target.checked; pollySave('hands', V.hands); };
   $('#vspeak', el).onchange = (e) => { V.speak = e.target.checked; pollySave('speak', V.speak); if (!V.speak) try { speechSynthesis.cancel(); } catch {} };
   $('#mic', el).onclick = micTap;
   voiceShow(V.state === 'idle' ? 'idle' : V.state);
+  // Say hello out loud the first time Polly opens (the tap on the button allows sound).
+  if (fresh && V.speak) { unlockAudio(); pollySpeak(S.chat[0].t, [], PL().code); }
 };
 
 /* ---------- Polly's voice ---------- */
