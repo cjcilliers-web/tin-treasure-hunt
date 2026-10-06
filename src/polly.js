@@ -235,8 +235,9 @@ const catWord = { en: (c) => `${c.toLowerCase()} treasure`, es: (c) => `tesoro d
 const LOCALE = { en: 'en-US', es: 'es-MX', pt: 'pt-BR', fr: 'fr-FR', de: 'de-DE' };
 const fmtDist = (m) => (m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1)} km`);
 
+const fuzz = (d) => (d.difficulty === 'Hard' ? null : d.difficulty === 'Medium' && d.distanceM != null ? Math.max(100, Math.round(d.distanceM / 100) * 100) : d.distanceM);
 const mini = (d, i, numbered) => ({
-  id: d.id, n: numbered ? i + 1 : null, emoji: d.emoji, icon: d.icon || null, title: d.title, distanceM: d.distanceM, walkMin: d.walkMin, rating: d.rating, category: d.category,
+  id: d.id, n: numbered ? i + 1 : null, emoji: d.emoji, icon: d.icon || null, title: d.title, distanceM: fuzz(d), secret: d.difficulty === 'Hard', walkMin: d.difficulty === 'Hard' ? null : d.walkMin, rating: d.rating, category: d.category,
 });
 
 async function context(env, user, destId, b) {

@@ -419,3 +419,14 @@ video.scan{width:100%;border-radius:12px;background:#000;aspect-ratio:1;object-f
 /* On the Map page the Map button stays steady gold/orange; it glows again when you leave. */
 .nav .nav-map[aria-current="page"]{animation:none;color:#f2a33a}
 .nav .nav-map[aria-current="page"] svg{animation:none;background:linear-gradient(135deg,#f2c45a,#f08a24);box-shadow:0 0 8px 2px rgba(240,138,36,.55)}
+
+/* Difficulty */
+.diff{display:inline-block;padding:1px 7px;border-radius:999px;font-weight:700;font-size:.78rem;border:1px solid var(--line)}
+.diff-easy{color:#9fe3b0;border-color:rgba(47,210,122,.45)}
+.diff-medium{color:#f2c45a;border-color:rgba(217,169,63,.55)}
+.diff-hard{color:#ff8fb8;border-color:rgba(224,70,143,.6);background:rgba(224,70,143,.1)}
+.diffhelp{display:grid;gap:4px;font-size:.88rem;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:rgba(217,169,63,.06)}
+.warmth{display:flex;gap:10px;align-items:center;padding:12px;border-radius:14px;border:2px solid var(--gold);background:rgba(217,169,63,.1)}
+.warmth b{display:block;font-size:1.05rem}
+.warmth small{display:block;color:var(--muted);margin-top:3px}
+.pinx.area{background:rgba(217,169,63,.25)}
