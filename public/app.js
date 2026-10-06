@@ -893,7 +893,8 @@ async function naturalSay(say, lang) {
     try {
       const res = await fetch('/api/polly/speak', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: say, lang }) });
       if (res.ok && /audio/.test(res.headers.get('content-type') || '')) buf = await res.arrayBuffer();
-    } catch {}
+      else { const d = await res.json().catch(() => ({})); V.voiceErr = d.error || `Voice error ${res.status}`; V.voiceDetail = d.detail || ''; }
+    } catch { V.voiceErr = 'No connection for Polly’s voice.'; }
   }
   if (!buf) return false;
   if (V.state !== 'warming') return true; // stopped while loading
@@ -932,7 +933,11 @@ function pollySpeak(text, drops, lang) {
   if (!say) { afterSpeak(); return; }
   try { window.speechSynthesis && speechSynthesis.cancel(); } catch {}
   voiceShow('warming');
-  naturalSay(say, lang).then((ok) => { if (!ok && V.state === 'warming') phoneSay(say, tag); });
+  naturalSay(say, lang).then((ok) => {
+    if (ok || V.state !== 'warming') return;
+    if (['en', 'es'].includes(lang)) { voiceShow('idle', `🔇 ${V.voiceErr || 'Polly’s voice is resting right now. Read her answer below.'}${S.me?.role === 'admin' && V.voiceDetail ? ` [HQ: ${V.voiceDetail.slice(0, 220)}]` : ''}`); return; }
+    phoneSay(say, tag);
+  });
 }
 function phoneSay(say, tag) {
   if (!window.speechSynthesis) { afterSpeak(); return; }

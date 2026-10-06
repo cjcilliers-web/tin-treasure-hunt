@@ -378,20 +378,36 @@ export async function pollyListen(req, env, user) {
 
 // Polly's natural voice (Workers AI · Deepgram Aura-2). English and Spanish get a real,
 // warm voice; other languages fall back to the phone's own voice.
-const VOICES = { en: ['@cf/deepgram/aura-2-en', 'thalia'], es: ['@cf/deepgram/aura-2-es', 'estrella'] };
+const VOICES = {
+  // Female voices only, tried in order: Aura-2 (Thalia / Estrella), then Aura-1 (Asteria), then MeloTTS.
+  en: [['@cf/deepgram/aura-2-en', { speaker: 'thalia' }], ['@cf/deepgram/aura-1', { speaker: 'asteria' }], ['@cf/myshell-ai/melotts', { lang: 'en' }]],
+  es: [['@cf/deepgram/aura-2-es', { speaker: 'estrella' }], ['@cf/myshell-ai/melotts', { lang: 'es' }]],
+};
+const audioResponse = async (out) => {
+  const headers = { 'content-type': 'audio/mpeg', 'cache-control': 'no-store' };
+  if (out instanceof ReadableStream) return new Response(out, { headers });
+  if (out instanceof Response) return out.ok ? new Response(out.body, { headers }) : null;
+  if (out instanceof ArrayBuffer || out instanceof Uint8Array) return new Response(out, { headers });
+  if (out && typeof out.audio === 'string') return new Response(Uint8Array.from(atob(out.audio), (c) => c.charCodeAt(0)), { headers });
+  return null;
+};
 export async function pollySpeak(req, env, user) {
   if (!user) return json({ error: 'Please sign in to hear Polly.' }, 401);
   if (!env.AI) return json({ error: 'Voice is not switched on.' }, 503);
   const b = await body(req, 4_000);
-  const v = VOICES[b.lang];
-  if (!v) return json({ error: 'No natural voice for this language yet.' }, 404);
+  const list = VOICES[b.lang];
+  if (!list) return json({ error: 'No natural voice for this language yet.' }, 404);
   const text = String(b.text || '').replace(/\s+/g, ' ').trim().slice(0, 700);
   if (!text) return json({ error: 'Nothing to say.' }, 400);
-  const out = await env.AI.run(v[0], { text, speaker: v[1], encoding: 'mp3' });
-  const headers = { 'content-type': 'audio/mpeg', 'cache-control': 'no-store' };
-  if (out instanceof ReadableStream) return new Response(out, { headers });
-  if (out instanceof Response) return new Response(out.body, { headers });
-  if (out instanceof ArrayBuffer || out instanceof Uint8Array) return new Response(out, { headers });
-  if (out && typeof out.audio === 'string') return new Response(Uint8Array.from(atob(out.audio), (c) => c.charCodeAt(0)), { headers });
-  return json({ error: 'Voice not available right now.' }, 502);
+  const errors = [];
+  for (const [model, opts] of list) {
+    try {
+      const input = model.includes('melotts') ? { prompt: text, ...opts } : { text, encoding: 'mp3', ...opts };
+      const res = await audioResponse(await env.AI.run(model, input));
+      if (res) { res.headers.set('x-polly-voice', model.split('/').pop()); return res; }
+      errors.push(`${model}: empty`);
+    } catch (e) { errors.push(`${model}: ${String(e && e.message || e).slice(0, 160)}`); }
+  }
+  console.log('polly voice failed', JSON.stringify(errors));
+  return json({ error: 'Polly’s voice is resting right now.', detail: errors.join(' | ') }, 502);
 }
