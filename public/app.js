@@ -804,6 +804,13 @@ VIEWS.polly = async (el) => {
   if (fresh && V.speak) { unlockAudio(); pollySpeak(S.chat[0].t, [], PL().code); }
 };
 
+// Tap anywhere while Polly talks: she stops (the microphone buttons handle their own taps).
+document.addEventListener('pointerdown', (e) => {
+  if (!['speaking', 'warming'].includes(V.state)) return;
+  if (e.target.closest && e.target.closest('.mic')) return;
+  stopVoice(); V.sayId = (V.sayId || 0) + 1; V.pending = null; voiceShow('idle');
+}, true);
+
 /* ---------- Polly Credits ---------- */
 function showPollyCredits(n) { S.pollyCredits = n; const b = $('#pcb'); if (b) b.textContent = n == null ? '…' : Number(n).toLocaleString(); const c = $('#pcred'); if (c) c.classList.toggle('low', n != null && n < 10); }
 async function loadPollyCredits() {
@@ -939,6 +946,7 @@ function stopVoice() {
 // Natural voice from the server (English, Spanish). Returns false so the caller can fall back.
 async function naturalSay(say, lang) {
   if (!['en', 'es'].includes(lang)) return false;
+  const myId = V.sayId;
   let buf = null;
   for (let i = 0; i < 2 && !buf; i++) {
     try {
@@ -951,7 +959,7 @@ async function naturalSay(say, lang) {
     } catch { V.voiceErr = 'No connection for Polly’s voice.'; }
   }
   if (!buf) return false;
-  if (V.state !== 'warming') return true; // stopped while loading
+  if (V.state !== 'warming' || myId !== V.sayId) return true; // stopped (or replaced) while loading
   // 1) AudioContext (allowed since the tap)
   try {
     if (V.ac) {
@@ -979,6 +987,7 @@ async function naturalSay(say, lang) {
   }
 }
 function pollySpeak(text, drops, lang) {
+  stopVoice(); V.sayId = (V.sayId || 0) + 1;
   if (!V.speak) { afterSpeak(); return; }
   const tag = (POLLY_LANGS.find((l) => l[0] === lang) || POLLY_LANGS[0])[3];
   const list = (drops || []).slice(0, 3).map((d, i) => `${d.n || i + 1}. ${d.title}${d.secret ? '' : `, ${fmtD(d.distanceM)}`}`).join('. ');
@@ -1019,6 +1028,7 @@ function drawChat(scroll = true) {
 }
 
 async function pollyAsk(q, byVoice = false) {
+  if (['speaking', 'warming'].includes(V.state)) { stopVoice(); V.sayId = (V.sayId || 0) + 1; V.state = 'idle'; }
   S.chat.push({ p: false, t: q }); S.chat.push({ p: true, t: '…' }); drawChat();
   if (byVoice) voiceShow('thinking');
   const lang = PL().code;
