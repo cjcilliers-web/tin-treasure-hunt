@@ -790,6 +790,7 @@ function voiceShow(state, msg) {
   const q = $('#q'); if (q) q.placeholder = state === 'idle' && !msg ? PL().ph : text;
 }
 function voiceStop() {
+  V.pending = null; try { V.src && V.src.stop(); } catch {} V.src = null;
   try { V.audio && V.audio.pause(); } catch {}
   try { V.rec && V.rec.abort(); } catch {} V.rec = null;
   try { V.media && V.media.state === 'recording' && V.media.stop(); } catch {} V.media = null;
@@ -800,10 +801,11 @@ function micTap() {
   // Unlock speech on iPhone: it must start from a tap.
   try { if (V.speak && !V.unlocked) { speechSynthesis.speak(new SpeechSynthesisUtterance(' ')); V.unlocked = true; } } catch {}
   unlockAudio();
-  if (V.state === 'speaking') { try { speechSynthesis.cancel(); } catch {} try { V.audio && V.audio.pause(); } catch {} voiceShow('idle'); return; }
+  if (V.pending) { const play = V.pending; V.pending = null; play(); return; }
+  if (V.state === 'speaking') { stopVoice(); voiceShow('idle'); return; }
   if (V.state === 'listening') { if (V.media) { try { V.media.stop(); } catch {} } else { try { V.rec && V.rec.stop(); } catch {} } return; }
   if (V.state === 'thinking') return;
-  if (V.state === 'warming') { try { V.audio && V.audio.pause(); } catch {} voiceShow('idle'); return; }
+  if (V.state === 'warming') { stopVoice(); voiceShow('idle'); return; }
   voiceListen();
 }
 function voiceListen() {
@@ -866,25 +868,60 @@ function pickVoice(tag) {
     || same.find((v) => norm(v) === tag.toLowerCase()) || same[0] || null;
 }
 const SILENT = 'data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tQxAADB8AhSmxhIIEVCSiJrDCQBTcu3UrAIwUdkRgQbFAZC1CQEwTJ9mjRvBA4UOLD8nKVOWfh+UlK3z/177OXrfOdKl7pyn3Xf//WreyTRUoAWgBgkOAGbZHBgG1OF6zM82DWbZaUmMBptgQhGjsyYqc9ae9XFz280948NMBWInljyzsNRFLPWdnZGWrddDsjK1unuSrVN9jJsK8KuQtQCtMBjCEtImISdNKJOopIpBFpNSMbIHCSRpRR5iakjTiyzLhchUUBwCgyKiweBv/7UsQbg8isVNoMPMjAAAA0gAAABEVFGmgqK////9bP/6XCykxBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq';
+// Sound permission comes from a tap. An AudioContext opened during a tap stays allowed afterwards,
+// so Polly's natural voice can play even when it takes a few seconds to arrive (Android, iPhone).
 function unlockAudio() {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (AC && !V.ac) V.ac = new AC();
+    if (V.ac && V.ac.state === 'suspended') V.ac.resume();
+    if (V.ac) { const b = V.ac.createBuffer(1, 1, 22050), src = V.ac.createBufferSource(); src.buffer = b; src.connect(V.ac.destination); src.start(0); }
+  } catch {}
   if (V.audioOk) return;
   try { V.audio = V.audio || new Audio(); V.audio.src = SILENT; const p = V.audio.play(); if (p) p.then(() => { V.audioOk = true; }).catch(() => {}); } catch {}
+}
+function stopVoice() {
+  try { V.src && V.src.stop(); } catch {} V.src = null;
+  try { V.audio && V.audio.pause(); } catch {}
+  try { window.speechSynthesis && speechSynthesis.cancel(); } catch {}
 }
 // Natural voice from the server (English, Spanish). Returns false so the caller can fall back.
 async function naturalSay(say, lang) {
   if (!['en', 'es'].includes(lang)) return false;
+  let buf = null;
+  for (let i = 0; i < 2 && !buf; i++) {
+    try {
+      const res = await fetch('/api/polly/speak', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: say, lang }) });
+      if (res.ok && /audio/.test(res.headers.get('content-type') || '')) buf = await res.arrayBuffer();
+    } catch {}
+  }
+  if (!buf) return false;
+  if (V.state !== 'warming') return true; // stopped while loading
+  // 1) AudioContext (allowed since the tap)
   try {
-    const res = await fetch('/api/polly/speak', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: say, lang }) });
-    if (!res.ok || !/audio/.test(res.headers.get('content-type') || '')) return false;
-    const url = URL.createObjectURL(await res.blob());
-    const a = V.audio || (V.audio = new Audio());
-    a.onended = () => { URL.revokeObjectURL(url); afterSpeak(); };
-    a.onerror = () => { URL.revokeObjectURL(url); voiceShow('idle'); };
-    a.src = url;
-    voiceShow('speaking');
-    await a.play();
+    if (V.ac) {
+      if (V.ac.state === 'suspended') await V.ac.resume();
+      const audio = await V.ac.decodeAudioData(buf.slice(0));
+      const src = V.ac.createBufferSource(); src.buffer = audio; src.connect(V.ac.destination);
+      src.onended = () => { if (V.src === src) { V.src = null; afterSpeak(); } };
+      V.src = src; voiceShow('speaking'); src.start(0);
+      return true;
+    }
+  } catch {}
+  // 2) Normal audio element
+  const url = URL.createObjectURL(new Blob([buf], { type: 'audio/mpeg' }));
+  const a = V.audio || (V.audio = new Audio());
+  a.onended = () => { URL.revokeObjectURL(url); afterSpeak(); };
+  a.onerror = () => { URL.revokeObjectURL(url); voiceShow('idle'); };
+  a.src = url;
+  try { voiceShow('speaking'); await a.play(); return true; }
+  catch {
+    // 3) The phone still blocked it: one tap plays Polly's real voice (never the phone's robot voice).
+    V.pending = () => { a.play().catch(() => {}); voiceShow('speaking'); };
+    voiceShow('idle', '🔊 Tap the parrot to hear Polly');
+    $$('.mic').forEach((m) => { $('.micico', m).textContent = '🦜'; });
     return true;
-  } catch { return false; }
+  }
 }
 function pollySpeak(text, drops, lang) {
   if (!V.speak) { afterSpeak(); return; }
