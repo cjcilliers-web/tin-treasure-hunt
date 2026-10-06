@@ -1377,7 +1377,7 @@ function dropForm(el, d) {
     <label>What's the story behind this find? (required)<textarea id="cl" required minlength="10" maxlength="600" placeholder="Captain Morgan left this burger near the place where travelers first arrive on the island. Can you find it before another explorer does?">${esc(d?.story || '')}</textarea></label>
     <label>Treasure type<select id="ct">${CATS.map((c) => `<option ${d?.category === c ? 'selected' : ''}>${c}</option>`).join('')}</select></label>
     <div class="icon-pick"><span class="icon-pick-title">Icon <b id="emShow">${tIco(d || {})}</b></span><input type="hidden" id="em" value="${esc(d?.emoji || '🎁')}">
-      <div class="icon-grid" role="radiogroup" aria-label="Choose an icon">${['🍔', '🌮', '🍕', '🦞', '🍣', '🥐', '🍰', '☕', '🍹', '🍺', '🍷', '🍾', '🥂', '🍸', '🥃', '🍦', '🍫', '🤿', '🐢', '🐠', '🛶', '🚤', '⛵', '🎣', '🏄', '🛵', '🚲', '🏖️', '💆', '💅', '💇', '💈', '✂️', '🧺', '🔧', '🚕', '🚗', '🚌', '⛴️', '🕶️', '👗', '💎', '🛍️', '🎟️', '🎉', '⭐', '🎁', '🗝️'].map((e) => `<button type="button" role="radio" class="icon-opt${(d?.emoji || '🎁') === e ? ' on' : ''}" aria-checked="${(d?.emoji || '🎁') === e}" data-em="${e}">${e}</button>`).join('')}</div>
+      <div class="icon-grid grouped" role="radiogroup" aria-label="Choose an icon">${(S.settings.treasureIcons || []).map((g) => `<div class="icon-group"><span class="icon-gname">${esc(g.name)}</span>${g.icons.map((e) => `<button type="button" role="radio" class="icon-opt${(d?.emoji || '🎁') === e ? ' on' : ''}" aria-checked="${(d?.emoji || '🎁') === e}" data-em="${esc(e)}">${esc(e)}</button>`).join('')}</div>`).join('')}</div>
       <label class="icon-own">Or paste any emoji<input id="emOwn" maxlength="8" placeholder="e.g. 🍾" autocomplete="off"></label>
       <div class="icon-drop" id="icDrop" tabindex="0" aria-label="Your own icon picture: drop, paste or browse">
         <span class="icon-drop-art" id="icPrev">${d?.icon ? `<img src="${esc(d.icon)}" alt="">` : '🖼️'}</span>
@@ -1578,11 +1578,19 @@ VIEWS.mStars = async (el) => {
   <div class="hist">${st.recent.filter((x) => x.comment).map((x) => `<div><span>“${esc(x.comment)}” · ${esc(x.display_name)}</span><b>★ ${x.overall_score}</b></div>`).join('') || '<p class="note">No comments yet.</p>'}</div>`;
 };
 
+// Split pasted text into single emojis (works with "🍔🌮" or "🍔 🌮", e.g. copied from emojiterra.com).
+function splitEmojis(text) {
+  const t = String(text || '').replace(/[A-Za-z0-9,;.:'"<>&()[\]{}!?\-_/\\|]/g, ' ');
+  let parts = [];
+  try { parts = [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(t)].map((x) => x.segment); } catch { parts = t.split(/\s+/); }
+  return [...new Set(parts.map((x) => x.trim()).filter((x) => x && /\p{Extended_Pictographic}|\p{Regional_Indicator}/u.test(x)))];
+}
+
 /* ---------- TIN HQ ---------- */
 let hqTab = 'overview';
 async function hqRender() {
   const el = $('#hq');
-  const tabs = [['overview', 'Overview'], ['merchants', 'Merchants'], ['drops', 'Treasure Drops'], ['hunts', 'Hunts'], ['grand', 'Grand Treasure'], ['videos', 'Videos'], ['raffle', 'Raffle'], ['polly', '🦜 Polly'], ['settings', 'Settings']];
+  const tabs = [['overview', 'Overview'], ['merchants', 'Merchants'], ['drops', 'Treasure Drops'], ['hunts', 'Hunts'], ['grand', 'Grand Treasure'], ['videos', 'Videos'], ['raffle', 'Raffle'], ['polly', '🦜 Polly'], ['icons', '🎨 Icons'], ['settings', 'Settings']];
   el.innerHTML = `<div class="hqbar"><h1>TIN <em>HQ</em> · ${esc(S.dest.name)}</h1><span class="note">Signed in as ${esc(S.me.name)} · <button class="linkbtn" id="hqOut">Sign out</button></span></div>
   <div class="hqtabs" role="tablist">${tabs.map(([k, l]) => `<button role="tab" data-t="${k}" aria-selected="${hqTab === k}">${l}</button>`).join('')}</div>
   <div id="hqb"><div class="spin"></div></div>`;
@@ -1893,6 +1901,33 @@ HQ.polly = async (el) => {
   $('#pset', el).onsubmit = async (e) => { e.preventDefault(); const f = Object.fromEntries(new FormData(e.target));
     const packs = d.settings.packs.map((_, i) => ({ credits: Number(f[`c${i}`]), usd: Number(f[`u${i}`]) }));
     try { await api('/api/admin/polly/settings', { method: 'PUT', body: { startCredits: Number(f.start), packs } }); hqToast('Saved'); HQ.polly(el); } catch (er) { hqToast(er.message); } };
+};
+
+HQ.icons = async (el) => {
+  const { settings: s } = await api('/api/admin/settings');
+  let groups = (s.treasureIcons || []).map((g) => ({ name: g.name, icons: [...g.icons] }));
+  const draw = () => {
+    el.innerHTML = `<div class="card" style="gap:8px"><h3>🎨 Treasure icons</h3>
+      <p class="note" style="margin:0">These are the icons merchants can choose for a treasure. <b>Tap an icon's ✕ to delete it.</b> To add icons, copy them from <a href="https://emojiterra.com" target="_blank" rel="noopener">emojiterra.com ↗</a> and paste them into the box under the group, then tap <b>Add</b>. Press <b>Save icons</b> when you are done.</p></div>
+      ${groups.map((g, gi) => `<div class="card icongroup-edit" style="gap:8px">
+        <div style="display:flex;gap:8px;align-items:center"><input class="gname" data-gi="${gi}" value="${esc(g.name)}" maxlength="30" aria-label="Group name" style="flex:1;font-weight:700"><button type="button" class="sbtn" data-delg="${gi}">Delete group</button></div>
+        <div class="iconchips">${g.icons.map((e, ii) => `<span class="ichip">${esc(e)}<button type="button" aria-label="Delete ${esc(e)}" data-del="${gi}:${ii}">✕</button></span>`).join('') || '<span class="note">No icons yet.</span>'}</div>
+        <div style="display:flex;gap:8px"><input class="iadd" data-gi="${gi}" placeholder="Paste emojis here, e.g. 💇🚕🍤" style="flex:1;font-size:1.3rem"><button type="button" class="sbtn gold" data-add="${gi}">Add</button></div></div>`).join('')}
+      <div class="card" style="gap:8px"><div style="display:flex;gap:8px"><input id="newg" placeholder="New group name, e.g. Kids" maxlength="30" style="flex:1"><button type="button" class="sbtn" id="addg">＋ Add group</button></div>
+        <button type="button" class="btn" id="saveic">💾 Save icons</button><p class="note" id="icmsg" style="margin:0"></p></div>`;
+    $$('.gname', el).forEach((i) => (i.oninput = () => { groups[i.dataset.gi].name = i.value; }));
+    $$('[data-del]', el).forEach((b) => (b.onclick = () => { const [gi, ii] = b.dataset.del.split(':').map(Number); groups[gi].icons.splice(ii, 1); draw(); }));
+    $$('[data-delg]', el).forEach((b) => (b.onclick = () => { if (confirm(`Delete the whole group "${groups[b.dataset.delg].name}"?`)) { groups.splice(Number(b.dataset.delg), 1); draw(); } }));
+    const add = (gi) => { const inp = $(`.iadd[data-gi="${gi}"]`, el); const got = splitEmojis(inp.value); if (!got.length) { hqToast('Paste one or more emojis first'); return; } groups[gi].icons = [...new Set([...groups[gi].icons, ...got])]; draw(); hqToast(`Added ${got.join(' ')}`); };
+    $$('[data-add]', el).forEach((b) => (b.onclick = () => add(Number(b.dataset.add))));
+    $$('.iadd', el).forEach((i) => (i.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); add(Number(i.dataset.gi)); } }));
+    $('#addg', el).onclick = () => { const n = $('#newg', el).value.trim(); if (!n) { hqToast('Type a group name'); return; } groups.push({ name: n, icons: [] }); draw(); };
+    $('#saveic', el).onclick = async () => {
+      try { const r = await api('/api/admin/settings', { method: 'PUT', body: { treasureIcons: groups.filter((g) => g.icons.length) } }); groups = r.settings.treasureIcons.map((g) => ({ name: g.name, icons: [...g.icons] })); S.settings.treasureIcons = r.settings.treasureIcons; draw(); $('#icmsg', el).textContent = '✓ Saved. Merchants see the new icons right away.'; hqToast('Icons saved'); }
+      catch (e) { hqToast(e.message); }
+    };
+  };
+  draw();
 };
 
 HQ.raffle = async (el) => {

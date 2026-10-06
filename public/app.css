@@ -485,3 +485,11 @@ video.scan{width:100%;border-radius:12px;background:#000;aspect-ratio:1;object-f
 .ptopup{display:grid;gap:10px;padding:14px;border-radius:16px;border:2px solid var(--gold);background:linear-gradient(135deg,rgba(217,169,63,.16),rgba(63,182,168,.08))}
 .ppacks{display:grid;gap:8px}
 .ppacks .btn{font-size:1.05rem}
+
+/* Grouped treasure icons (merchant form) and the HQ icon editor */
+.icon-grid.grouped{display:grid;grid-template-columns:repeat(auto-fill,minmax(52px,1fr));max-height:340px}
+.icon-group{display:contents}
+.icon-gname{grid-column:1/-1;font-size:.8rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--gold-hi);margin:6px 2px 0}
+.iconchips{display:flex;flex-wrap:wrap;gap:8px}
+.ichip{display:inline-flex;align-items:center;gap:4px;font-size:1.7rem;padding:4px 6px 4px 10px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
+.ichip button{border:0;background:rgba(224,70,75,.15);color:#ff8a8f;border-radius:50%;width:24px;height:24px;font-size:.8rem;cursor:pointer}

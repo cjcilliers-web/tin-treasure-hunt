@@ -76,6 +76,25 @@ export function parsePacks(raw) {
   } catch { return []; }
 }
 
+// Icons merchants can pick for a treasure, in groups. TIN HQ can edit them (setting 'treasure_icons').
+export const DEFAULT_ICONS = [
+  { name: 'Food', icons: ['🍔', '🌮', '🌯', '🍕', '🦞', '🦐', '🍣', '🥗', '🍝', '🥩', '🍗', '🥐', '🥞', '🍳', '🥪'] },
+  { name: 'Sweets', icons: ['🍦', '🍨', '🍰', '🧁', '🍩', '🍪', '🍫', '🍬'] },
+  { name: 'Drinks', icons: ['☕', '🧋', '🥤', '🧃', '🥥', '🍹', '🍺', '🍻', '🍷', '🍾', '🥂', '🍸', '🥃'] },
+  { name: 'Shopping', icons: ['🛍️', '👗', '👕', '👒', '🧢', '👟', '👜', '🕶️', '💎', '💍', '⌚', '🧴', '🌸', '📱', '🎁'] },
+  { name: 'Services', icons: ['💇', '💈', '✂️', '💅', '💆', '🧖', '🧺', '🧼', '🔧', '🛠️', '💊', '🩺', '🐾', '📷'] },
+  { name: 'Transportation', icons: ['🚕', '🚗', '🚐', '🚌', '🛵', '🏍️', '🚲', '⛴️', '🚤', '🛳️', '✈️', '⛽'] },
+  { name: 'Adventure', icons: ['🤿', '🏄', '🛶', '⛵', '🎣', '🏊', '🧗', '🚴', '🐬', '🏖️', '🏝️', '🌴', '🧭', '🗺️'] },
+  { name: 'Stay & Fun', icons: ['🏨', '🛏️', '🎟️', '🎉', '🎶', '🎤', '🎨', '🎯', '🎲', '🏆', '⭐', '🗝️', '💰', '🏷️'] },
+];
+export function parseIcons(raw) {
+  try {
+    const g = JSON.parse(raw);
+    if (Array.isArray(g) && g.length) return g.filter((x) => x && Array.isArray(x.icons)).map((x) => ({ name: String(x.name || 'Icons').slice(0, 30), icons: x.icons.map(String).filter(Boolean).slice(0, 80) }));
+  } catch {}
+  return DEFAULT_ICONS;
+}
+
 export async function getSettings(db) {
   const { results } = await db.prepare('SELECT key, value FROM settings').all();
   const s = Object.fromEntries(results.map((r) => [r.key, r.value]));
@@ -92,6 +111,7 @@ export async function getSettings(db) {
     videoPrice30: Number(s.video_price_30_cents ?? 15),
     videoPotShare: Number(s.video_pot_share_cents ?? 5),
     videoDailyLimit: Number(s.video_daily_limit ?? 20),
+    treasureIcons: s.treasure_icons ? parseIcons(s.treasure_icons) : DEFAULT_ICONS,
   };
 }
 
