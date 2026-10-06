@@ -729,7 +729,7 @@ VIEWS.polly = async (el) => {
     <div class="vtoggles"><label><input type="checkbox" id="vhands" ${V.hands ? 'checked' : ''}> ${esc(VU.hands)}</label><label><input type="checkbox" id="vspeak" ${V.speak ? 'checked' : ''}> 🔊 ${esc(VU.speak)}</label></div>
   </div>
   <div class="chat" id="chat" aria-live="polite"></div>
-  <div class="chips">${sugg.map((s) => `<button class="chip" data-s="${esc(s)}">${esc(s)}</button>`).join('')}</div>
+  <div class="chips psugg">${sugg.map((s) => `<button class="chip" data-s="${esc(s)}">💬 ${esc(s)}</button>`).join('')}</div>
   <form class="ask" id="askf"><button type="button" class="mic sm" id="mic2" aria-label="${esc(VU.tap)}"><span class="micico">🎤</span></button><input id="q" placeholder="${esc(PL().ph)}" autocomplete="off" aria-label="Ask Polly"><button>Ask</button></form>`;
   drawChat();
   $$('[data-s]', el).forEach((b) => (b.onclick = () => pollyAsk(b.dataset.s)));

@@ -437,3 +437,7 @@ video.scan{width:100%;border-radius:12px;background:#000;aspect-ratio:1;object-f
 .nav .nav-polly{line-height:1.1;font-size:.74rem}
 .nav .nav-polly small{display:block;font-size:.66rem;color:#ff8fb8;font-weight:800;letter-spacing:.02em}
 .nav .nav-polly[aria-current="page"] small{color:var(--gold-hi)}
+/* Polly's suggestion buttons: big, easy to read, all visible (they wrap instead of scrolling) */
+.psugg{flex-wrap:wrap;overflow:visible;gap:10px;min-height:0}
+.psugg .chip{font-size:1.1rem;font-weight:700;padding:14px 18px;border-width:2px;border-color:rgba(63,182,168,.55);color:#eef6f4;background:rgba(63,182,168,.12);border-radius:16px;text-align:left;white-space:normal}
+.psugg .chip:active{background:rgba(217,169,63,.25);border-color:var(--gold)}
