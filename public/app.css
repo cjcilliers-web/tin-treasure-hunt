@@ -459,3 +459,16 @@ video.scan{width:100%;border-radius:12px;background:#000;aspect-ratio:1;object-f
 .porttile.on b{color:var(--gold-hi)}
 .porttile select{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;font-size:16px}
 .locsw{margin-bottom:2px}
+
+/* Bigger, clearer Polly: large round button, big parrot while she loads, thinks and talks */
+.voice{padding:18px 14px}
+.voice .mic:not(.sm){width:150px;height:150px;border:4px solid rgba(255,255,255,.18)}
+.voice .mic:not(.sm) .micico{font-size:4.2rem;filter:drop-shadow(0 4px 8px rgba(0,0,0,.35))}
+.voice .mic.warming:not(.sm) .micico,.voice .mic.thinking:not(.sm) .micico,.voice .mic.speaking:not(.sm) .micico{font-size:5.6rem;animation:pollyBob 1.2s ease-in-out infinite}
+.voice .mic.warming:not(.sm),.voice .mic.thinking:not(.sm){background:radial-gradient(circle at 50% 40%,#2a5a52,#13302c)}
+.voice .mic.warming:not(.sm)::after,.voice .mic.thinking:not(.sm)::after{inset:-10px;border-width:5px}
+.voice .mic.speaking:not(.sm){background:radial-gradient(circle at 50% 40%,#3a3170,#1d1840)}
+@keyframes pollyBob{0%,100%{transform:translateY(0) rotate(-4deg)}50%{transform:translateY(-6px) rotate(4deg)}}
+.voice .vstate{font-size:1.1rem}
+.pollyhead .parrot{width:56px;height:56px;font-size:2rem}
+.pollyhead b{font-size:1.2rem}
