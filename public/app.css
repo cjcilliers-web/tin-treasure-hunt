@@ -125,6 +125,28 @@ input[type=range]{width:100%;accent-color:var(--gold)}
 .ask input{flex:1;min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
 .ask button{background:var(--gold);border:0;border-radius:12px;padding:0 14px;font-weight:700;color:#1a1405;cursor:pointer}
 .pollyhead{display:flex;gap:10px;align-items:center}
+.plangs{display:flex;gap:6px;flex-wrap:wrap}
+.plangs button{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:6px 10px;color:var(--text);cursor:pointer;font-size:.85rem}
+.plangs button.on{border-color:var(--gold);background:rgba(217,169,63,.18);font-weight:700}
+@media (max-width:420px){.plangs button span{display:none}.plangs button{font-size:1.2rem;padding:4px 10px}}
+.voice{display:grid;justify-items:center;gap:8px;padding:14px;border:1px solid var(--line);border-radius:18px;background:linear-gradient(160deg,rgba(63,182,168,.12),rgba(217,169,63,.10))}
+.mic{width:92px;height:92px;border-radius:50%;border:0;cursor:pointer;background:linear-gradient(135deg,#3fb6a8,#d9a93f);box-shadow:0 6px 20px rgba(0,0,0,.35);display:grid;place-items:center;transition:transform .15s}
+.mic:active{transform:scale(.94)}
+.micico{font-size:2.4rem;line-height:1}
+.mic.listening{background:#e0464b;animation:micpulse 1.1s infinite}
+.mic.thinking{animation:micspin 1.4s linear infinite}
+.mic.speaking{background:linear-gradient(135deg,#7b5cff,#3fb6a8);animation:micpulse 1.6s infinite}
+@keyframes micpulse{0%{box-shadow:0 0 0 0 rgba(224,70,75,.55)}70%{box-shadow:0 0 0 22px rgba(224,70,75,0)}100%{box-shadow:0 0 0 0 rgba(224,70,75,0)}}
+@keyframes micspin{50%{transform:scale(.92)}}
+.mic.sm{width:42px;height:42px;flex:none;box-shadow:none}
+.ask .mic.sm{border-radius:50%;padding:0;background:linear-gradient(135deg,#3fb6a8,#d9a93f)}
+.ask .mic.sm.listening{background:#e0464b}
+.ask .mic.sm.speaking{background:linear-gradient(135deg,#7b5cff,#3fb6a8)}
+.mic.sm .micico{font-size:1.2rem}
+.mic.sm.listening{animation:micpulse 1.1s infinite}
+.vstate{font-weight:700;text-align:center;min-height:1.3em}
+.vtoggles{display:flex;gap:14px;flex-wrap:wrap;justify-content:center;font-size:.85rem}
+.vtoggles label{display:flex;gap:6px;align-items:center;cursor:pointer}
 .parrot{width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#3fb6a8,#d9a93f);display:grid;place-items:center;font-size:1.3rem}
 
 /* merchant */

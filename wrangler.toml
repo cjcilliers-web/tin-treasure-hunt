@@ -18,10 +18,10 @@ database_name = "tin-treasure-hunt"
 database_id = "a116a3fe-681c-4ada-a5e9-cfc7699ba97f"
 migrations_dir = "migrations"
 
-# Optional: lets Polly understand free-form questions with Workers AI.
+# Polly's AI brain (Workers AI): understands free-form questions and voice.
 # Without it Polly still works using built-in rules.
-# [ai]
-# binding = "AI"
+[ai]
+binding = "AI"
 
 [triggers]
 # Hourly: release expired claims. Sundays 14:00 UTC: weekly raffle.

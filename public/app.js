@@ -185,6 +185,7 @@ function go(view, arg = null) {
   S.view = view; S.arg = arg;
   if (S.poll) { clearInterval(S.poll); S.poll = null; }
   stopCamera();
+  if (typeof voiceStop === 'function') voiceStop();
   render();
 }
 
@@ -641,34 +642,172 @@ const POLLY_UI = {
   de: { hello: 'Hallo! Ich bin Polly, deine Schatzführerin. Sag mir, worauf du Lust hast, mit wem du unterwegs bist oder wie viel Zeit du hast.', ask: 'Frag Polly: „Hilf mir, Schätze zu finden.“', ph: 'Frag Polly…', showCode: 'Meinen Code zeigen', yes: 'Ja, plane sie',
     sugg: ['Hilf mir, Schätze zu finden', 'Ich möchte nur Essens-Schätze', 'Schätze zu Fuß in der Nähe', 'Ich habe Kinder', 'Plane eine einstündige Schatzsuche', 'Was ist jetzt geöffnet?', 'Wie viele Credits habe ich?'] },
 };
-const PL = () => ({ code: POLLY_UI[S.me?.language] ? S.me.language : 'en', ...(POLLY_UI[S.me?.language] || POLLY_UI.en) });
+const POLLY_LANGS = [['en', '🇺🇸', 'English', 'en-US'], ['es', '🇲🇽', 'Español', 'es-MX'], ['pt', '🇧🇷', 'Português', 'pt-BR'], ['fr', '🇫🇷', 'Français', 'fr-FR'], ['de', '🇩🇪', 'Deutsch', 'de-DE']];
+const VOICE_UI = {
+  en: { tap: 'Tap and talk to Polly', listening: 'Listening… speak now', thinking: 'Polly is thinking…', speaking: 'Polly is talking · tap to stop', hands: 'Hands-free', speak: 'Polly speaks', noMic: 'Please allow the microphone so Polly can hear you.', unheard: "I didn't catch that. Tap and try again." },
+  es: { tap: 'Toca y habla con Polly', listening: 'Te escucho… habla ahora', thinking: 'Polly está pensando…', speaking: 'Polly está hablando · toca para parar', hands: 'Manos libres', speak: 'Polly habla', noMic: 'Permite el micrófono para que Polly te escuche.', unheard: 'No te entendí. Toca e inténtalo otra vez.' },
+  pt: { tap: 'Toque e fale com a Polly', listening: 'Estou ouvindo… fale agora', thinking: 'A Polly está pensando…', speaking: 'A Polly está falando · toque para parar', hands: 'Mãos livres', speak: 'Polly fala', noMic: 'Permita o microfone para a Polly ouvir você.', unheard: 'Não entendi. Toque e tente de novo.' },
+  fr: { tap: 'Touchez et parlez à Polly', listening: "J'écoute… parlez maintenant", thinking: 'Polly réfléchit…', speaking: 'Polly parle · touchez pour arrêter', hands: 'Mains libres', speak: 'Polly parle', noMic: 'Autorisez le micro pour que Polly vous entende.', unheard: "Je n'ai pas compris. Touchez et réessayez." },
+  de: { tap: 'Tippen und mit Polly sprechen', listening: 'Ich höre zu… sprich jetzt', thinking: 'Polly denkt nach…', speaking: 'Polly spricht · tippen zum Stoppen', hands: 'Freihändig', speak: 'Polly spricht', noMic: 'Bitte erlaube das Mikrofon, damit Polly dich hört.', unheard: 'Das habe ich nicht verstanden. Tippe und versuche es nochmal.' },
+};
+const pollyPref = (k, d) => { try { const v = localStorage.getItem('polly_' + k); return v === null ? d : JSON.parse(v); } catch { return d; } };
+const pollySave = (k, v) => { try { localStorage.setItem('polly_' + k, JSON.stringify(v)); } catch {} };
+const pollyLang = () => { const l = S.pollyLang || pollyPref('lang', null) || S.me?.language; return POLLY_UI[l] ? l : 'en'; };
+const PL = () => ({ code: pollyLang(), ...POLLY_UI[pollyLang()] });
+const V = { state: 'idle', rec: null, media: null, hands: pollyPref('hands', true), speak: pollyPref('speak', true) };
 
 VIEWS.polly = async (el) => {
   if (!S.chat.length) S.chat.push({ p: true, t: PL().hello });
-  const sugg = PL().sugg;
+  const sugg = PL().sugg, VU = VOICE_UI[PL().code];
   el.innerHTML = `<div class="pollyhead"><span class="parrot">🦜</span><div><b>Polly</b><div class="note">Knows where you are, what's live and your credits</div></div></div>
+  <div class="plangs" role="group" aria-label="Polly's language">${POLLY_LANGS.map(([c, f, n]) => `<button class="${c === PL().code ? 'on' : ''}" data-lang="${c}" title="${n}">${f} <span>${n}</span></button>`).join('')}</div>
+  <div class="voice">
+    <button class="mic" id="mic" aria-label="${esc(VU.tap)}"><span class="micico">🎤</span></button>
+    <div class="vstate" id="vstate">${esc(VU.tap)}</div>
+    <div class="vtoggles"><label><input type="checkbox" id="vhands" ${V.hands ? 'checked' : ''}> ${esc(VU.hands)}</label><label><input type="checkbox" id="vspeak" ${V.speak ? 'checked' : ''}> 🔊 ${esc(VU.speak)}</label></div>
+  </div>
   <div class="chat" id="chat" aria-live="polite"></div>
   <div class="chips">${sugg.map((s) => `<button class="chip" data-s="${esc(s)}">${esc(s)}</button>`).join('')}</div>
-  <form class="ask" id="askf"><input id="q" placeholder="${esc(PL().ph)}" autocomplete="off" aria-label="Ask Polly"><button>Ask</button></form>`;
+  <form class="ask" id="askf"><button type="button" class="mic sm" id="mic2" aria-label="${esc(VU.tap)}"><span class="micico">🎤</span></button><input id="q" placeholder="${esc(PL().ph)}" autocomplete="off" aria-label="Ask Polly"><button>Ask</button></form>`;
   drawChat();
   $$('[data-s]', el).forEach((b) => (b.onclick = () => pollyAsk(b.dataset.s)));
   $('#askf', el).onsubmit = (e) => { e.preventDefault(); const q = $('#q').value.trim(); if (q) { $('#q').value = ''; pollyAsk(q); } };
+  $('#mic2', el).onclick = micTap;
+  $$('[data-lang]', el).forEach((b) => (b.onclick = () => {
+    voiceStop(); S.pollyLang = b.dataset.lang; pollySave('lang', S.pollyLang);
+    if (S.chat.length === 1 && S.chat[0].p) S.chat = [];
+    render();
+  }));
+  $('#vhands', el).onchange = (e) => { V.hands = e.target.checked; pollySave('hands', V.hands); };
+  $('#vspeak', el).onchange = (e) => { V.speak = e.target.checked; pollySave('speak', V.speak); if (!V.speak) try { speechSynthesis.cancel(); } catch {} };
+  $('#mic', el).onclick = micTap;
+  voiceShow(V.state === 'idle' ? 'idle' : V.state);
 };
+
+/* ---------- Polly's voice ---------- */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const onPolly = () => !!$('#mic');
+function voiceShow(state, msg) {
+  V.state = state;
+  const st = $('#vstate'); if (!st) return;
+  const VU = VOICE_UI[PL().code];
+  $$('.mic').forEach((m) => { m.className = `mic ${m.id === 'mic2' ? 'sm ' : ''}${state}`; $('.micico', m).textContent = state === 'speaking' ? '🔊' : state === 'thinking' ? '🦜' : '🎤'; });
+  const text = msg || { idle: VU.tap, listening: VU.listening, thinking: VU.thinking, speaking: VU.speaking }[state] || VU.tap;
+  st.textContent = text;
+  const q = $('#q'); if (q) q.placeholder = state === 'idle' && !msg ? PL().ph : text;
+}
+function voiceStop() {
+  try { V.rec && V.rec.abort(); } catch {} V.rec = null;
+  try { V.media && V.media.state === 'recording' && V.media.stop(); } catch {} V.media = null;
+  try { speechSynthesis.cancel(); } catch {}
+  V.state = 'idle';
+}
+function micTap() {
+  // Unlock speech on iPhone: it must start from a tap.
+  try { if (V.speak && !V.unlocked) { speechSynthesis.speak(new SpeechSynthesisUtterance(' ')); V.unlocked = true; } } catch {}
+  if (V.state === 'speaking') { try { speechSynthesis.cancel(); } catch {} voiceShow('idle'); return; }
+  if (V.state === 'listening') { if (V.media) { try { V.media.stop(); } catch {} } else { try { V.rec && V.rec.stop(); } catch {} } return; }
+  if (V.state === 'thinking') return;
+  voiceListen();
+}
+function voiceListen() {
+  if (!onPolly()) return;
+  const tag = POLLY_LANGS.find((l) => l[0] === PL().code)[3];
+  if (SR) {
+    const rec = new SR(); V.rec = rec;
+    rec.lang = tag; rec.interimResults = true; rec.maxAlternatives = 1; rec.continuous = false;
+    let finalText = '', heard = false;
+    rec.onresult = (e) => {
+      heard = true; let t = '';
+      for (let i = 0; i < e.results.length; i++) { t += e.results[i][0].transcript; if (e.results[i].isFinal) finalText = t; }
+      const q = $('#q'); if (q) q.value = t;
+    };
+    rec.onerror = (e) => {
+      V.rec = null;
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') voiceShow('idle', VOICE_UI[PL().code].noMic);
+      else if (e.error === 'no-speech') voiceShow('idle', VOICE_UI[PL().code].unheard);
+      else if (e.error !== 'aborted') voiceShow('idle');
+    };
+    rec.onend = () => {
+      if (V.rec !== rec) return; V.rec = null;
+      const q = $('#q'); const text = (finalText || (heard && q ? q.value : '')).trim();
+      if (q) q.value = '';
+      if (text) pollyAsk(text, true); else if (V.state === 'listening') voiceShow('idle', VOICE_UI[PL().code].unheard);
+    };
+    try { rec.start(); voiceShow('listening'); } catch { V.rec = null; voiceShow('idle'); }
+    return;
+  }
+  voiceRecord();
+}
+// Phones without built-in speech recognition: record, then Polly's AI writes it down.
+async function voiceRecord() {
+  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) { voiceShow('idle', 'Voice is not available in this browser. Please type.'); return; }
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch { voiceShow('idle', VOICE_UI[PL().code].noMic); return; }
+  const chunks = []; const mr = new MediaRecorder(stream); V.media = mr;
+  mr.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+  mr.onstop = async () => {
+    stream.getTracks().forEach((t) => t.stop()); clearTimeout(V.cap); V.media = null;
+    if (!onPolly() || !chunks.length) { voiceShow('idle'); return; }
+    voiceShow('thinking');
+    try {
+      const res = await fetch(`/api/polly/listen?lang=${PL().code}`, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': mr.mimeType || 'audio/webm' }, body: new Blob(chunks, { type: mr.mimeType || 'audio/webm' }) });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error || 'Error');
+      if (d.text) pollyAsk(d.text, true); else voiceShow('idle', VOICE_UI[PL().code].unheard);
+    } catch (e) { voiceShow('idle', e.message); }
+  };
+  mr.start(); voiceShow('listening');
+  V.cap = setTimeout(() => { try { mr.state === 'recording' && mr.stop(); } catch {} }, 8000);
+}
+function pickVoice(tag) {
+  const vs = (window.speechSynthesis && speechSynthesis.getVoices()) || [];
+  const l = tag.slice(0, 2);
+  const same = vs.filter((v) => v.lang && v.lang.toLowerCase().replace('_', '-').startsWith(l));
+  return same.find((v) => v.lang.replace('_', '-') === tag && /female|samantha|paulina|monica|luciana|amelie|anna|google/i.test(v.name))
+    || same.find((v) => v.lang.replace('_', '-') === tag) || same[0] || null;
+}
+function pollySpeak(text, drops, lang) {
+  if (!V.speak || !window.speechSynthesis) { afterSpeak(); return; }
+  const tag = (POLLY_LANGS.find((l) => l[0] === lang) || POLLY_LANGS[0])[3];
+  const list = (drops || []).slice(0, 3).map((d, i) => `${d.n || i + 1}. ${d.title}, ${fmtD(d.distanceM)}`).join('. ');
+  const U = { en: ['meters', 'kilometers'], es: ['metros', 'kilómetros'], pt: ['metros', 'quilômetros'], fr: ['mètres', 'kilomètres'], de: ['Meter', 'Kilometer'] }[lang] || ['meters', 'kilometers'];
+  const say = `${text} ${list}`.replace(/(\d)\s?km\b/g, `$1 ${U[1]}`).replace(/(\d)\s?m\b/g, `$1 ${U[0]}`).replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, '').replace(/\s+/g, ' ').trim();
+  if (!say) { afterSpeak(); return; }
+  try { speechSynthesis.cancel(); } catch {}
+  const u = new SpeechSynthesisUtterance(say);
+  u.lang = tag; const v = pickVoice(tag); if (v) u.voice = v; u.rate = 1; u.pitch = 1.1;
+  u.onend = afterSpeak; u.onerror = () => voiceShow('idle');
+  voiceShow('speaking');
+  speechSynthesis.speak(u);
+}
+function afterSpeak() {
+  if (V.state !== 'speaking' && V.state !== 'thinking') return;
+  if (V.hands && onPolly()) setTimeout(() => { if (onPolly() && (V.state === 'speaking' || V.state === 'thinking')) voiceListen(); }, 400);
+  else voiceShow('idle');
+}
+try { window.speechSynthesis && speechSynthesis.getVoices(); window.speechSynthesis && (speechSynthesis.onvoiceschanged = () => {}); } catch {}
 
 function drawChat() {
   const c = $('#chat'); if (!c) return;
   c.innerHTML = S.chat.map((m) => `<div class="msg ${m.p ? 'p' : 'u'}">${esc(m.t)}${m.drops?.length ? `<div class="mini">${m.drops.map((d) => `<button data-d="${d.id}">${d.n ? `<b>${d.n}.</b> ` : ''}${esc(d.emoji)} ${esc(d.title)} · ${fmtD(d.distanceM)}</button>`).join('')}</div>` : ''}</div>`).join('');
-  $$('[data-d]', c).forEach((b) => (b.onclick = () => go('detail', Number(b.dataset.d))));
+  $$('[data-d]', c).forEach((b) => (b.onclick = () => { voiceStop(); go('detail', Number(b.dataset.d)); }));
   const scr = $('#screen'); scr.scrollTop = scr.scrollHeight;
 }
 
-async function pollyAsk(q) {
+async function pollyAsk(q, byVoice = false) {
   S.chat.push({ p: false, t: q }); S.chat.push({ p: true, t: '…' }); drawChat();
+  if (byVoice) voiceShow('thinking');
+  const lang = PL().code;
   try {
-    const r = await api('/api/polly', { method: 'POST', body: { q, destination: S.dest.id, ...(S.locSource === 'gps' ? { lat: S.here.lat, lng: S.here.lng } : {}) } });
+    const r = await api('/api/polly', { method: 'POST', body: { q, lang, destination: S.dest.id, ...(S.locSource === 'gps' ? { lat: S.here.lat, lng: S.here.lng } : {}) } });
     S.chat[S.chat.length - 1] = { p: true, t: r.reply, drops: r.drops };
-  } catch (e) { S.chat[S.chat.length - 1] = { p: true, t: `Sorry, I couldn't answer that just now. ${e.message}` }; }
-  drawChat();
+    drawChat();
+    if (byVoice && onPolly()) pollySpeak(r.reply, r.drops, r.intent?.lang || lang);
+  } catch (e) {
+    S.chat[S.chat.length - 1] = { p: true, t: `Sorry, I couldn't answer that just now. ${e.message}` }; drawChat();
+    if (byVoice) voiceShow('idle');
+  }
 }
 
 /* ---------- Merchant views ---------- */
