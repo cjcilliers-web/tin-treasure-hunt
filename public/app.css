@@ -430,3 +430,6 @@ video.scan{width:100%;border-radius:12px;background:#000;aspect-ratio:1;object-f
 .warmth b{display:block;font-size:1.05rem}
 .warmth small{display:block;color:var(--muted);margin-top:3px}
 .pinx.area{background:rgba(217,169,63,.25)}
+/* Picture icons on map pins: round, fill the gold pin */
+.pinx.pic{padding:2px;background:var(--gold)}
+.pinx.pic .dico{width:100%;height:100%;border-radius:50%;object-fit:contain}
