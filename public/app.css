@@ -441,3 +441,11 @@ video.scan{width:100%;border-radius:12px;background:#000;aspect-ratio:1;object-f
 .psugg{flex-wrap:wrap;overflow:visible;gap:10px;min-height:0}
 .psugg .chip{font-size:1.1rem;font-weight:700;padding:14px 18px;border-width:2px;border-color:rgba(63,182,168,.55);color:#eef6f4;background:rgba(63,182,168,.12);border-radius:16px;text-align:left;white-space:normal}
 .psugg .chip:active{background:rgba(217,169,63,.25);border-color:var(--gold)}
+/* Polly getting ready to talk / thinking: spinning gold ring around the microphone */
+.mic{position:relative}
+.mic.thinking,.mic.warming{animation:none}
+.mic.thinking::after,.mic.warming::after{content:"";position:absolute;inset:-8px;border-radius:50%;border:4px solid transparent;border-top-color:#f2c45a;border-right-color:#3fb6a8;animation:micring .9s linear infinite}
+.mic.sm.thinking::after,.mic.sm.warming::after{inset:-5px;border-width:3px}
+@keyframes micring{to{transform:rotate(360deg)}}
+.vstate{transition:color .2s}
+.mic.warming + .vstate{color:var(--gold-hi)}

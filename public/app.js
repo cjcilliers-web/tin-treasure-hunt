@@ -694,11 +694,11 @@ const POLLY_UI = {
 };
 const POLLY_LANGS = [['en', '🇺🇸', 'English', 'en-US'], ['es', '🇲🇽', 'Español', 'es-MX'], ['pt', '🇧🇷', 'Português', 'pt-BR'], ['fr', '🇫🇷', 'Français', 'fr-FR'], ['de', '🇩🇪', 'Deutsch', 'de-DE']];
 const VOICE_UI = {
-  en: { tap: 'Tap and talk to Polly', listening: 'Listening… speak now', thinking: 'Polly is thinking…', speaking: 'Polly is talking · tap to stop', hands: 'Hands-free', speak: 'Polly speaks', noMic: 'Please allow the microphone so Polly can hear you.', unheard: "I didn't catch that. Tap and try again." },
-  es: { tap: 'Toca y habla con Polly', listening: 'Te escucho… habla ahora', thinking: 'Polly está pensando…', speaking: 'Polly está hablando · toca para parar', hands: 'Manos libres', speak: 'Polly habla', noMic: 'Permite el micrófono para que Polly te escuche.', unheard: 'No te entendí. Toca e inténtalo otra vez.' },
-  pt: { tap: 'Toque e fale com a Polly', listening: 'Estou ouvindo… fale agora', thinking: 'A Polly está pensando…', speaking: 'A Polly está falando · toque para parar', hands: 'Mãos livres', speak: 'Polly fala', noMic: 'Permita o microfone para a Polly ouvir você.', unheard: 'Não entendi. Toque e tente de novo.' },
-  fr: { tap: 'Touchez et parlez à Polly', listening: "J'écoute… parlez maintenant", thinking: 'Polly réfléchit…', speaking: 'Polly parle · touchez pour arrêter', hands: 'Mains libres', speak: 'Polly parle', noMic: 'Autorisez le micro pour que Polly vous entende.', unheard: "Je n'ai pas compris. Touchez et réessayez." },
-  de: { tap: 'Tippen und mit Polly sprechen', listening: 'Ich höre zu… sprich jetzt', thinking: 'Polly denkt nach…', speaking: 'Polly spricht · tippen zum Stoppen', hands: 'Freihändig', speak: 'Polly spricht', noMic: 'Bitte erlaube das Mikrofon, damit Polly dich hört.', unheard: 'Das habe ich nicht verstanden. Tippe und versuche es nochmal.' },
+  en: { warming: 'Polly is getting ready to talk…', tap: 'Tap and talk to Polly', listening: 'Listening… speak now', thinking: 'Polly is thinking…', speaking: 'Polly is talking · tap to stop', hands: 'Hands-free', speak: 'Polly speaks', noMic: 'Please allow the microphone so Polly can hear you.', unheard: "I didn't catch that. Tap and try again." },
+  es: { warming: 'Polly se prepara para hablar…', tap: 'Toca y habla con Polly', listening: 'Te escucho… habla ahora', thinking: 'Polly está pensando…', speaking: 'Polly está hablando · toca para parar', hands: 'Manos libres', speak: 'Polly habla', noMic: 'Permite el micrófono para que Polly te escuche.', unheard: 'No te entendí. Toca e inténtalo otra vez.' },
+  pt: { warming: 'A Polly está se preparando para falar…', tap: 'Toque e fale com a Polly', listening: 'Estou ouvindo… fale agora', thinking: 'A Polly está pensando…', speaking: 'A Polly está falando · toque para parar', hands: 'Mãos livres', speak: 'Polly fala', noMic: 'Permita o microfone para a Polly ouvir você.', unheard: 'Não entendi. Toque e tente de novo.' },
+  fr: { warming: 'Polly se prépare à parler…', tap: 'Touchez et parlez à Polly', listening: "J'écoute… parlez maintenant", thinking: 'Polly réfléchit…', speaking: 'Polly parle · touchez pour arrêter', hands: 'Mains libres', speak: 'Polly parle', noMic: 'Autorisez le micro pour que Polly vous entende.', unheard: "Je n'ai pas compris. Touchez et réessayez." },
+  de: { warming: 'Polly macht sich bereit zu sprechen…', tap: 'Tippen und mit Polly sprechen', listening: 'Ich höre zu… sprich jetzt', thinking: 'Polly denkt nach…', speaking: 'Polly spricht · tippen zum Stoppen', hands: 'Freihändig', speak: 'Polly spricht', noMic: 'Bitte erlaube das Mikrofon, damit Polly dich hört.', unheard: 'Das habe ich nicht verstanden. Tippe und versuche es nochmal.' },
 };
 const pollyPref = (k, d) => { try { const v = localStorage.getItem('polly_' + k); return v === null ? d : JSON.parse(v); } catch { return d; } };
 const pollySave = (k, v) => { try { localStorage.setItem('polly_' + k, JSON.stringify(v)); } catch {} };
@@ -756,8 +756,8 @@ function voiceShow(state, msg) {
   V.state = state;
   const st = $('#vstate'); if (!st) return;
   const VU = VOICE_UI[PL().code];
-  $$('.mic').forEach((m) => { m.className = `mic ${m.id === 'mic2' ? 'sm ' : ''}${state}`; $('.micico', m).textContent = state === 'speaking' ? '🔊' : state === 'thinking' ? '🦜' : '🎤'; });
-  const text = msg || { idle: VU.tap, listening: VU.listening, thinking: VU.thinking, speaking: VU.speaking }[state] || VU.tap;
+  $$('.mic').forEach((m) => { m.className = `mic ${m.id === 'mic2' ? 'sm ' : ''}${state}`; $('.micico', m).textContent = state === 'speaking' ? '🔊' : state === 'thinking' || state === 'warming' ? '🦜' : '🎤'; });
+  const text = msg || { idle: VU.tap, listening: VU.listening, thinking: VU.thinking, warming: VU.warming, speaking: VU.speaking }[state] || VU.tap;
   st.textContent = text;
   const q = $('#q'); if (q) q.placeholder = state === 'idle' && !msg ? PL().ph : text;
 }
@@ -775,6 +775,7 @@ function micTap() {
   if (V.state === 'speaking') { try { speechSynthesis.cancel(); } catch {} try { V.audio && V.audio.pause(); } catch {} voiceShow('idle'); return; }
   if (V.state === 'listening') { if (V.media) { try { V.media.stop(); } catch {} } else { try { V.rec && V.rec.stop(); } catch {} } return; }
   if (V.state === 'thinking') return;
+  if (V.state === 'warming') { try { V.audio && V.audio.pause(); } catch {} voiceShow('idle'); return; }
   voiceListen();
 }
 function voiceListen() {
@@ -865,8 +866,8 @@ function pollySpeak(text, drops, lang) {
   const say = `${text} ${list}`.replace(/(\d)\s?km\b/g, `$1 ${U[1]}`).replace(/(\d)\s?m\b/g, `$1 ${U[0]}`).replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, '').replace(/\s+/g, ' ').trim();
   if (!say) { afterSpeak(); return; }
   try { window.speechSynthesis && speechSynthesis.cancel(); } catch {}
-  voiceShow('speaking');
-  naturalSay(say, lang).then((ok) => { if (!ok && V.state === 'speaking') phoneSay(say, tag); });
+  voiceShow('warming');
+  naturalSay(say, lang).then((ok) => { if (!ok && V.state === 'warming') phoneSay(say, tag); });
 }
 function phoneSay(say, tag) {
   if (!window.speechSynthesis) { afterSpeak(); return; }
@@ -877,8 +878,8 @@ function phoneSay(say, tag) {
   speechSynthesis.speak(u);
 }
 function afterSpeak() {
-  if (V.state !== 'speaking' && V.state !== 'thinking') return;
-  if (V.hands && onPolly()) setTimeout(() => { if (onPolly() && (V.state === 'speaking' || V.state === 'thinking')) voiceListen(); }, 400);
+  if (V.state !== 'speaking' && V.state !== 'thinking' && V.state !== 'warming') return;
+  if (V.hands && onPolly()) setTimeout(() => { if (onPolly() && ['speaking', 'thinking', 'warming'].includes(V.state)) voiceListen(); }, 400);
   else voiceShow('idle');
 }
 try { window.speechSynthesis && speechSynthesis.getVoices(); window.speechSynthesis && (speechSynthesis.onvoiceschanged = () => {}); } catch {}
