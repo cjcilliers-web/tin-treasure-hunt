@@ -3,6 +3,7 @@ import { HttpError, json, lastRaffleAt } from './lib.js';
 import { register, login, logout, currentUser, publicUser, requireRole, tinSso } from './auth.js';
 import * as H from './hunt.js';
 import { askPolly, pollyTip, pollyListen, pollySpeak, voiceStatus } from './polly.js';
+import * as PC from './polly-credits.js';
 import { runRaffle, raffleStatus, raffleDrawNow } from './raffle.js';
 import { payDrop, verifyCheckout, stripeWebhook } from './payments.js';
 import { syncTinMerchants, adminSyncTin, publicSyncTin } from './tin-sync.js';
@@ -37,6 +38,12 @@ const routes = [
   ['POST', /^\/api\/polly\/listen$/, (r, e, u) => pollyListen(r, e, u)],
   ['POST', /^\/api\/polly\/speak$/, (r, e, u) => pollySpeak(r, e, u)],
   ['GET', /^\/api\/polly\/voice-status$/, (r, e) => voiceStatus(r, e)],
+  ['GET', /^\/api\/polly\/credits$/, (r, e, u) => PC.myPollyCredits(r, e, u)],
+  ['POST', /^\/api\/polly\/credits\/checkout$/, (r, e, u) => PC.buyPollyCredits(r, e, u)],
+  ['GET', /^\/api\/polly\/credits\/checkout\/([A-Za-z0-9_]+)$/, (r, e, u, sid) => PC.verifyPollyCheckout(r, e, u, sid)],
+  ['GET', /^\/api\/admin\/polly$/, (r, e, u) => PC.adminPolly(r, e, u)],
+  ['POST', /^\/api\/admin\/polly\/credits$/, (r, e, u) => PC.adminGivePolly(r, e, u)],
+  ['PUT', /^\/api\/admin\/polly\/settings$/, (r, e, u) => PC.adminPollySettings(r, e, u)],
 
   ['POST', /^\/api\/merchant\/apply$/, (r, e, u) => H.applyMerchant(r, e, u)],
   ['GET', /^\/api\/merchant\/me$/, (r, e, u) => H.merchantMe(r, e, u)],

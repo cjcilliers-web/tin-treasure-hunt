@@ -197,6 +197,14 @@ async function handlePaymentReturn() {
     catch (e) { go('mList'); toast(e.message); }
     return;
   }
+  const pollyPaid = params.get('polly');
+  if (pollyPaid) {
+    try { const r = await api(`/api/polly/credits/checkout/${encodeURIComponent(pollyPaid)}`); setMode('traveler'); go('polly');
+      toast(r.paid ? `Thank you! ${Number(r.added).toLocaleString()} Polly Credits added. You now have ${Number(r.credits).toLocaleString()}.` : 'Payment is processing. Your Polly Credits will appear shortly.'); }
+    catch (e) { toast(e.message); }
+    history.replaceState(null, '', '/app');
+    return;
+  }
   if (credits) {
     try { const r = await api(`/api/merchant/credits/checkout/${encodeURIComponent(credits)}${mq()}`); S.merchant = null; go('mList');
       toast(r.paid ? `Payment received! ${r.drops} drops added. You now have ${r.balance}.` : 'Payment is processing. Your drops will appear shortly.'); }
@@ -753,6 +761,8 @@ VIEWS.polly = async (el) => {
   if (fresh) S.chat.push({ p: true, t: pollyGreeting(), greet: true });
   const sugg = PL().sugg, VU = VOICE_UI[PL().code];
   el.innerHTML = `<div class="pollyhead"><span class="parrot">🦜</span><div><b>Polly Pal Live Talk</b><div class="note">Knows where you are, what's live and your credits</div></div></div>
+  <div class="pcredits" id="pcred"><span>🦜 Polly Credits: <b id="pcb">…</b></span><button type="button" class="sbtn gold" id="ptop">＋ Top up</button></div>
+  <div class="ptopup" id="ptopbox" hidden></div>
   <div class="plangs" role="group" aria-label="Polly's language">${POLLY_LANGS.map(([c, f, n]) => `<button class="${c === PL().code ? 'on' : ''}" data-lang="${c}" title="${n}">${f} <span>${n}</span></button>`).join('')}</div>
   <div class="voice">
     <button class="mic" id="mic" aria-label="${esc(VU.tap)}"><span class="micico">🎤</span></button>
@@ -775,10 +785,35 @@ VIEWS.polly = async (el) => {
   $('#vhands', el).onchange = (e) => { V.hands = e.target.checked; pollySave('hands', V.hands); };
   $('#vspeak', el).onchange = (e) => { V.speak = e.target.checked; pollySave('speak', V.speak); if (!V.speak) try { speechSynthesis.cancel(); } catch {} };
   $('#mic', el).onclick = micTap;
+  $('#ptop', el).onclick = () => showTopup();
+  loadPollyCredits();
   voiceShow(V.state === 'idle' ? 'idle' : V.state);
   // Say hello out loud the first time Polly opens (the tap on the button allows sound).
   if (fresh && V.speak) { unlockAudio(); pollySpeak(S.chat[0].t, [], PL().code); }
 };
+
+/* ---------- Polly Credits ---------- */
+function showPollyCredits(n) { S.pollyCredits = n; const b = $('#pcb'); if (b) b.textContent = n == null ? '…' : Number(n).toLocaleString(); const c = $('#pcred'); if (c) c.classList.toggle('low', n != null && n < 10); }
+async function loadPollyCredits() {
+  try { const r = await api('/api/polly/credits'); S.pollyPacks = r.packs; S.pollyPay = r.payments; showPollyCredits(r.credits); } catch {}
+}
+function showTopup(reason) {
+  const box = $('#ptopbox'); if (!box) return;
+  const packs = S.pollyPacks || [];
+  box.hidden = false;
+  box.innerHTML = `<b>${esc(reason || 'Top up your Polly Credits')}</b>
+    <p class="note" style="margin:0">Polly Credits pay for Polly's voice and listening. Answers on screen stay free.</p>
+    <div class="ppacks">${packs.map((p, i) => `<button type="button" class="btn" data-pk="${i}">${Number(p.credits).toLocaleString()} Polly Credits · $${Number(p.usd).toFixed(2)}</button>`).join('') || '<p class="note">No packs yet.</p>'}</div>
+    <button type="button" class="back" id="ptopx" style="text-align:center">Not now</button>`;
+  $('#ptopx', box).onclick = () => { box.hidden = true; };
+  $$('[data-pk]', box).forEach((b) => (b.onclick = async () => {
+    if (S.pollyPay !== 'stripe') { toast('Card payments are not switched on yet.'); return; }
+    b.disabled = true; b.textContent = 'Opening secure payment…';
+    try { const r = await api('/api/polly/credits/checkout', { method: 'POST', body: { pack: Number(b.dataset.pk) } }); location.href = r.checkoutUrl; }
+    catch (e) { toast(e.message); b.disabled = false; }
+  }));
+  box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
 
 /* ---------- Polly's voice ---------- */
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -854,6 +889,7 @@ async function voiceRecord() {
     try {
       const res = await fetch(`/api/polly/listen?lang=${PL().code}`, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': mr.mimeType || 'audio/webm' }, body: new Blob(chunks, { type: mr.mimeType || 'audio/webm' }) });
       const d = await res.json().catch(() => ({}));
+      if (d.outOfCredits) { showPollyCredits(0); showTopup('Your Polly Credits are used up'); }
       if (!res.ok) throw new Error(d.error || 'Error');
       if (d.text) pollyAsk(d.text, true); else voiceShow('idle', VOICE_UI[PL().code].unheard);
     } catch (e) { voiceShow('idle', e.message); }
@@ -895,8 +931,11 @@ async function naturalSay(say, lang) {
   for (let i = 0; i < 2 && !buf; i++) {
     try {
       const res = await fetch('/api/polly/speak', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: say, lang }) });
-      if (res.ok && /audio/.test(res.headers.get('content-type') || '')) buf = await res.arrayBuffer();
-      else { const d = await res.json().catch(() => ({})); V.voiceErr = d.error || `Voice error ${res.status}`; V.voiceDetail = d.detail || ''; }
+      if (res.ok && /audio/.test(res.headers.get('content-type') || '')) { buf = await res.arrayBuffer(); const c = res.headers.get('x-polly-credits'); if (c !== null) showPollyCredits(Number(c)); }
+      else {
+        const d = await res.json().catch(() => ({})); V.voiceErr = d.error || `Voice error ${res.status}`; V.voiceDetail = d.detail || '';
+        if (d.outOfCredits) { showPollyCredits(d.credits ?? 0); setTimeout(() => showTopup('Your Polly Credits are used up'), 300); break; }
+      }
     } catch { V.voiceErr = 'No connection for Polly’s voice.'; }
   }
   if (!buf) return false;
@@ -975,6 +1014,7 @@ async function pollyAsk(q, byVoice = false) {
     const r = await api('/api/polly', { method: 'POST', body: { q, lang, destination: S.dest.id, ...(S.locSource === 'gps' ? { lat: S.here.lat, lng: S.here.lng } : {}) } });
     S.chat[S.chat.length - 1] = { p: true, t: r.reply, drops: r.drops };
     drawChat();
+    loadPollyCredits();
     if (byVoice && onPolly()) pollySpeak(r.reply, r.drops, r.intent?.lang || lang);
   } catch (e) {
     S.chat[S.chat.length - 1] = { p: true, t: `Sorry, I couldn't answer that just now. ${e.message}` }; drawChat();
@@ -1530,7 +1570,7 @@ VIEWS.mStars = async (el) => {
 let hqTab = 'overview';
 async function hqRender() {
   const el = $('#hq');
-  const tabs = [['overview', 'Overview'], ['merchants', 'Merchants'], ['drops', 'Treasure Drops'], ['hunts', 'Hunts'], ['grand', 'Grand Treasure'], ['videos', 'Videos'], ['raffle', 'Raffle'], ['settings', 'Settings']];
+  const tabs = [['overview', 'Overview'], ['merchants', 'Merchants'], ['drops', 'Treasure Drops'], ['hunts', 'Hunts'], ['grand', 'Grand Treasure'], ['videos', 'Videos'], ['raffle', 'Raffle'], ['polly', '🦜 Polly'], ['settings', 'Settings']];
   el.innerHTML = `<div class="hqbar"><h1>TIN <em>HQ</em> · ${esc(S.dest.name)}</h1><span class="note">Signed in as ${esc(S.me.name)} · <button class="linkbtn" id="hqOut">Sign out</button></span></div>
   <div class="hqtabs" role="tablist">${tabs.map(([k, l]) => `<button role="tab" data-t="${k}" aria-selected="${hqTab === k}">${l}</button>`).join('')}</div>
   <div id="hqb"><div class="spin"></div></div>`;
@@ -1815,6 +1855,32 @@ HQ.grand = async (el) => {
     try { const made = await api('/api/admin/grand', { method: 'POST', body: { title: f.title, emoji: f.emoji, sponsorMerchantId: f.sponsorMerchantId ? Number(f.sponsorMerchantId) : null, prize: f.prize, photo: f.photo, area: f.area, goalUsd: Number(f.goalUsd), startRadius: Number(f.startRadius), finalRadius: Number(f.finalRadius), lat: spot.lat, lng: spot.lng, clues } }); hqJustCreated = made.id; hqToast('✨ Created! Scrolled up to your new treasure.'); await hqRender(); }
     catch (err) { hqToast(err.message); }
   };
+};
+
+HQ.polly = async (el) => {
+  const d = await api('/api/admin/polly');
+  const cr = (n) => Math.round(n / 100).toLocaleString(), usd = (n) => `$${(n * 0.011 / 1000).toFixed(4)}`;
+  el.innerHTML = `<div class="kp">
+      <div><b>${cr(d.todayUtc.neurons)}</b><span>Polly Credits used today (UTC) · ${d.todayUtc.uses} uses</span></div>
+      <div><b>${Math.round(d.todayUtc.neurons / d.freeNeuronsPerDay * 100)}%</b><span>of Cloudflare's free 10,000/day · paid part today ${'$' + d.todayUtc.usd.toFixed(4)}</span></div>
+      <div><b>${cr(d.last30d.neurons)}</b><span>credits used in 30 days · ${usd(d.last30d.neurons)} at Cloudflare prices</span></div>
+      <div><b>$${Number(d.wallet.balance).toFixed(2)}</b><span>Polly Admin wallet (pays Cloudflare)</span></div></div>
+    <div class="card" style="gap:8px"><h3>Where Polly's credits go (30 days)</h3>
+      ${d.byKind.map((k) => `<div class="note">${({ voice: '🔊 Speaking', listen: '🎤 Listening', think: '🧠 Understanding' })[k.kind] || k.kind}: <b>${k.c}</b> times · ${cr(k.n)} credits · ${usd(k.n)}</div>`).join('') || '<p class="note">No Polly use yet.</p>'}
+      <p class="note">1 Polly Credit = 100 Cloudflare neurons ≈ $0.0011. A spoken answer of ~250 letters ≈ 7 credits.</p></div>
+    <div class="card" style="gap:8px"><h3>Explorers</h3>
+      <div class="tbl"><table><tr><th>Explorer</th><th>Left</th><th>Used</th><th>Uses</th></tr>${d.users.map((u) => `<tr><td><b>${esc(u.name || '')}</b><div class="note">${esc(u.email)}</div></td><td>${u.credits}</td><td>${u.usedCredits}</td><td>${u.uses}</td></tr>`).join('') || '<tr><td colspan="4" class="note">No explorers yet.</td></tr>'}</table></div></div>
+    <div class="card"><h3>Give Polly Credits</h3><form class="hqform" id="pgive"><label>Explorer email<input name="email" required type="email"></label><label>Polly Credits (minus takes away)<input name="credits" type="number" value="100" required></label><button class="sbtn gold">Give credits</button></form></div>
+    <div class="card"><h3>Polly Credits settings</h3><form class="hqform" id="pset">
+      <label>Starting Polly Credits for each new explorer<input name="start" type="number" min="0" value="${d.settings.startCredits}"></label>
+      ${d.settings.packs.map((p, i) => `<label>Top-up pack ${i + 1}: credits<input name="c${i}" type="number" min="1" value="${p.credits}"></label><label>Pack ${i + 1}: price (USD)<input name="u${i}" type="number" min="0.5" step="0.5" value="${p.usd}"></label>`).join('')}
+      <button class="sbtn gold">Save</button></form></div>
+    <div class="card" style="gap:6px"><h3>Polly Admin wallet</h3>${d.wallet.entries.map((w) => `<div class="note">${new Date(w.created_at).toLocaleString()} · <b>$${Number(w.amount_usd).toFixed(2)}</b> · ${esc(w.reason)} · ${esc(w.note || '')}</div>`).join('') || '<p class="note">No entries yet. Top-ups land here.</p>'}</div>`;
+  $('#pgive', el).onsubmit = async (e) => { e.preventDefault(); const f = Object.fromEntries(new FormData(e.target));
+    try { const r = await api('/api/admin/polly/credits', { method: 'POST', body: { email: f.email, credits: Number(f.credits) } }); hqToast(`Done. They now have ${r.credits} Polly Credits.`); HQ.polly(el); } catch (er) { hqToast(er.message); } };
+  $('#pset', el).onsubmit = async (e) => { e.preventDefault(); const f = Object.fromEntries(new FormData(e.target));
+    const packs = d.settings.packs.map((_, i) => ({ credits: Number(f[`c${i}`]), usd: Number(f[`u${i}`]) }));
+    try { await api('/api/admin/polly/settings', { method: 'PUT', body: { startCredits: Number(f.start), packs } }); hqToast('Saved'); HQ.polly(el); } catch (er) { hqToast(er.message); } };
 };
 
 HQ.raffle = async (el) => {
