@@ -140,7 +140,7 @@ const T = {
   en: {
     hello: "Hola! I'm Polly, your treasure guide. Tell me what you're in the mood for, who you're with, or how much time you have.",
     none: "I couldn't find a live treasure that matches. Try a wider search distance or another type.",
-    found: (n, what) => `I found ${n} ${what}${s(n, '', 's')} for you. Closest first:`,
+    found: (n, what) => `I found ${n} ${n === 1 ? what : what.replace(/\btreasure\b/, 'treasures')} for you. Closest first:`,
     nearest: 'The closest treasure to you right now:',
     route: (n, m, mins) => `Here's a ${mins % 60 === 0 ? `${mins / 60}-hour` : `${mins}-minute`} hunt: ${n} ${s(n, 'treasure', 'treasures')}, about ${m} minutes including walking and time at each stop. Start with the first one:`,
     routeNone: (m) => `${m} minutes is tight. Try the closest treasure first:`,
@@ -158,7 +158,7 @@ const T = {
   es: {
     hello: '¡Hola! Soy Polly, tu guía de tesoros. Dime qué se te antoja, con quién vas o cuánto tiempo tienes.',
     none: 'No encontré un tesoro activo que coincida. Prueba una distancia mayor u otro tipo.',
-    found: (n, what) => `Encontré ${n} ${what}${s(n, '', 's')} para ti. Los más cercanos primero:`,
+    found: (n, what) => `Encontré ${n} ${n === 1 ? what : what.replace(/\btesoro\b/, 'tesoros').replace(/\babierto\b/, 'abiertos')} para ti. Los más cercanos primero:`,
     nearest: 'El tesoro más cercano a ti ahora mismo:',
     route: (n, m, mins) => `Aquí tienes una ruta de ${mins % 60 === 0 ? `${mins / 60} ${s(mins / 60, 'hora', 'horas')}` : `${mins} minutos`}: ${n} ${s(n, 'tesoro', 'tesoros')}, unos ${m} minutos con caminata y tiempo en cada parada. Empieza por el primero:`,
     routeNone: (m) => `${m} minutos es poco tiempo. Prueba primero el tesoro más cercano:`,
@@ -176,7 +176,7 @@ const T = {
   pt: {
     hello: 'Olá! Sou a Polly, sua guia de tesouros. Diga o que você quer, com quem está ou quanto tempo tem.',
     none: 'Não encontrei nenhum tesouro ativo assim. Tente uma distância maior ou outro tipo.',
-    found: (n, what) => `Encontrei ${n} ${what}${s(n, '', 's')} para você. Os mais próximos primeiro:`,
+    found: (n, what) => `Encontrei ${n} ${n === 1 ? what : what.replace(/\btesouro\b/, 'tesouros').replace(/\baberto\b/, 'abertos')} para você. Os mais próximos primeiro:`,
     nearest: 'O tesouro mais perto de você agora:',
     route: (n, m, mins) => `Aqui está uma caça de ${mins % 60 === 0 ? `${mins / 60} ${s(mins / 60, 'hora', 'horas')}` : `${mins} minutos`}: ${n} ${s(n, 'tesouro', 'tesouros')}, cerca de ${m} minutos com caminhada e tempo em cada parada. Comece pelo primeiro:`,
     routeNone: (m) => `${m} minutos é pouco tempo. Tente primeiro o tesouro mais perto:`,
@@ -194,7 +194,7 @@ const T = {
   fr: {
     hello: 'Bonjour ! Je suis Polly, votre guide des trésors. Dites-moi ce qui vous fait envie, avec qui vous êtes ou combien de temps vous avez.',
     none: "Je n'ai trouvé aucun trésor actif qui corresponde. Essayez une distance plus grande ou un autre type.",
-    found: (n, what) => `J'ai trouvé ${n} ${what}${s(n, '', 's')} pour vous. Les plus proches d'abord :`,
+    found: (n, what) => `J'ai trouvé ${n} ${n === 1 ? what : what.replace(/trésor(?!s)/, 'trésors').replace(/\bouvert\b/, 'ouverts')} pour vous. Les plus proches d'abord :`,
     nearest: 'Le trésor le plus proche de vous en ce moment :',
     route: (n, m, mins) => `Voici une chasse de ${mins % 60 === 0 ? `${mins / 60} ${s(mins / 60, 'heure', 'heures')}` : `${mins} minutes`} : ${n} ${s(n, 'trésor', 'trésors')}, environ ${m} minutes avec la marche et le temps à chaque arrêt. Commencez par le premier :`,
     routeNone: (m) => `${m} minutes, c'est court. Essayez d'abord le trésor le plus proche :`,
@@ -212,7 +212,7 @@ const T = {
   de: {
     hello: 'Hallo! Ich bin Polly, deine Schatzführerin. Sag mir, worauf du Lust hast, mit wem du unterwegs bist oder wie viel Zeit du hast.',
     none: 'Ich habe keinen passenden Schatz gefunden. Versuch eine größere Entfernung oder eine andere Art.',
-    found: (n, what) => `Ich habe ${n} ${n === 1 ? what : `${what.replace(/Schatz$/, 'Schätze')}`} für dich gefunden. Die nächsten zuerst:`,
+    found: (n, what) => `Ich habe ${n} ${n === 1 ? what : what.replace(/n Schatz\b/, ' Schätze').replace(/Schatz\b/, 'Schätze')} für dich gefunden. Die nächsten zuerst:`,
     nearest: 'Der Schatz, der dir gerade am nächsten ist:',
     route: (n, m, mins) => `Hier ist eine ${mins % 60 === 0 ? `${mins / 60}-stündige` : `${mins}-minütige`} Schatzsuche: ${n} ${s(n, 'Schatz', 'Schätze')}, etwa ${m} Minuten mit Fußweg und Zeit an jedem Stopp. Fang mit dem ersten an:`,
     routeNone: (m) => `${m} Minuten sind knapp. Probier zuerst den nächsten Schatz:`,
