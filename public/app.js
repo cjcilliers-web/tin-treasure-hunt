@@ -1179,7 +1179,16 @@ function placePicker(el, d) {
     setTimeout(() => map && map.invalidateSize(), 60);
   };
   show(false); draw();
-  return { get: () => pin };
+  // On save: whatever is typed in the Latitude / Longitude boxes wins, even if Enter was never pressed.
+  const sync = () => {
+    const la = $('#clat', el)?.value || '', lo = $('#clng', el)?.value || '';
+    if (!la.trim() && !lo.trim()) return true;
+    jumpLL(true);
+    const lat = parseOne(la, true), lng = parseOne(lo, false);
+    if ((la.trim() && lat === null) || (lo.trim() && lng === null) || (la.trim() && !lo.trim()) || (!la.trim() && lo.trim())) return false;
+    return true;
+  };
+  return { get: () => pin, sync };
 }
 
 function dropForm(el, d) {
@@ -1273,13 +1282,14 @@ function dropForm(el, d) {
     e.preventDefault();
     const body = { title: $('#tn').value, item: $('#it').value, story: $('#cl').value, category: $('#ct').value, emoji: $('#em').value, difficulty: $('#df').value, value: Number($('#vl').value || 0), walkingNote: $('#wd').value, kids: $('#kd').checked, mystery: $('#my').checked };
     if (!edit) body.quantity = Number($('#qt').value);
+    if (!place.sync()) { $('#er').textContent = 'Please check the Latitude and Longitude boxes: one of them was not understood.'; $('#clat').scrollIntoView({ block: 'center' }); return; }
     const pin = place.get(); body.lat = pin.lat; body.lng = pin.lng;
     if (photos) body.photos = photos;
     if (iconData !== undefined) body.icon = iconData;
     body.terms = $('#tm').value;
     const btn = $('button[type=submit]', el); btn.disabled = true;
     try {
-      if (edit) { const r = await api(`/api/merchant/drops/${d.id}${mq()}`, { method: 'PATCH', body }); toast(r.status === 'pending' ? 'Saved. Sent to TIN HQ for review.' : 'Saved'); }
+      if (edit) { const r = await api(`/api/merchant/drops/${d.id}${mq()}`, { method: 'PATCH', body }); toast(`${r.status === 'pending' ? 'Saved. Sent to TIN HQ for review.' : 'Saved'} 📍 ${body.lat.toFixed(5)}, ${body.lng.toFixed(5)}`); }
       else {
         const r = await api(`/api/merchant/drops${mq()}`, { method: 'POST', body });
         S.merchant = null;
