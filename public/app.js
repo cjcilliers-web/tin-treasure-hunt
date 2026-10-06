@@ -18,7 +18,7 @@ async function api(path, { method = 'GET', body } = {}) {
 const ICON = {
   hunt: '<path d="M3 7h18v12H3z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M3 11h18M10 11v3h4v-3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5 7c0-2 2-3 7-3s7 1 7 3" fill="none" stroke="currentColor" stroke-width="1.6"/>',
   map: '<path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2zM9 4v14M15 6v14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>',
-  polly: '<path d="M4 5h16v11H9l-5 4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="9" cy="10.5" r="1" fill="currentColor"/><circle cx="13" cy="10.5" r="1" fill="currentColor"/><circle cx="17" cy="10.5" r="1" fill="currentColor"/>',
+  polly: '<rect x="9" y="3" width="6" height="11" rx="3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
   wallet: '<rect x="3" y="6" width="18" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M16 12h5v4h-5a2 2 0 0 1 0-4z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5 6l10-3 1 3" fill="none" stroke="currentColor" stroke-width="1.6"/>',
   claims: '<rect x="4" y="4" width="6" height="6" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="14" y="4" width="6" height="6" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="4" y="14" width="6" height="6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M14 14h2v2h-2zM18 18h2v2h-2zM14 18h2M18 14h2" stroke="currentColor" stroke-width="1.6"/>',
   scan: '<path d="M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4M7 12h10" fill="none" stroke="currentColor" stroke-width="1.6"/>',
@@ -201,7 +201,7 @@ function setMode(m, first) {
 }
 
 const NAVS = {
-  traveler: [['hunt', 'Hunt', 'hunt'], ['map', 'Map', 'map'], ['polly', 'Polly', 'polly'], ['claims', 'My codes', 'claims'], ['wallet', 'Credits', 'wallet']],
+  traveler: [['hunt', 'Hunt', 'hunt'], ['map', 'Map', 'map'], ['polly', 'Polly Pal<small>Live Talk</small>', 'polly'], ['claims', 'My codes', 'claims'], ['wallet', 'Credits', 'wallet']],
   merchant: [['mScan', 'Redeem', 'scan'], ['mList', 'Drops', 'list'], ['mMsg', 'Shield', 'shield'], ['mStats', 'Today', 'stats'], ['mStars', 'Ratings', 'star']],
 };
 
@@ -709,7 +709,7 @@ const V = { state: 'idle', rec: null, media: null, hands: pollyPref('hands', tru
 VIEWS.polly = async (el) => {
   if (!S.chat.length) S.chat.push({ p: true, t: PL().hello });
   const sugg = PL().sugg, VU = VOICE_UI[PL().code];
-  el.innerHTML = `<div class="pollyhead"><span class="parrot">🦜</span><div><b>Polly</b><div class="note">Knows where you are, what's live and your credits</div></div></div>
+  el.innerHTML = `<div class="pollyhead"><span class="parrot">🦜</span><div><b>Polly Pal Live Talk</b><div class="note">Knows where you are, what's live and your credits</div></div></div>
   <div class="plangs" role="group" aria-label="Polly's language">${POLLY_LANGS.map(([c, f, n]) => `<button class="${c === PL().code ? 'on' : ''}" data-lang="${c}" title="${n}">${f} <span>${n}</span></button>`).join('')}</div>
   <div class="voice">
     <button class="mic" id="mic" aria-label="${esc(VU.tap)}"><span class="micico">🎤</span></button>
@@ -747,6 +747,7 @@ function voiceShow(state, msg) {
   const q = $('#q'); if (q) q.placeholder = state === 'idle' && !msg ? PL().ph : text;
 }
 function voiceStop() {
+  try { V.audio && V.audio.pause(); } catch {}
   try { V.rec && V.rec.abort(); } catch {} V.rec = null;
   try { V.media && V.media.state === 'recording' && V.media.stop(); } catch {} V.media = null;
   try { speechSynthesis.cancel(); } catch {}
@@ -755,7 +756,8 @@ function voiceStop() {
 function micTap() {
   // Unlock speech on iPhone: it must start from a tap.
   try { if (V.speak && !V.unlocked) { speechSynthesis.speak(new SpeechSynthesisUtterance(' ')); V.unlocked = true; } } catch {}
-  if (V.state === 'speaking') { try { speechSynthesis.cancel(); } catch {} voiceShow('idle'); return; }
+  unlockAudio();
+  if (V.state === 'speaking') { try { speechSynthesis.cancel(); } catch {} try { V.audio && V.audio.pause(); } catch {} voiceShow('idle'); return; }
   if (V.state === 'listening') { if (V.media) { try { V.media.stop(); } catch {} } else { try { V.rec && V.rec.stop(); } catch {} } return; }
   if (V.state === 'thinking') return;
   voiceListen();
@@ -810,23 +812,51 @@ async function voiceRecord() {
   mr.start(); voiceShow('listening');
   V.cap = setTimeout(() => { try { mr.state === 'recording' && mr.stop(); } catch {} }, 8000);
 }
+// Phone voice fallback: only ever a voice in the right language, preferring natural/female ones.
 function pickVoice(tag) {
   const vs = (window.speechSynthesis && speechSynthesis.getVoices()) || [];
-  const l = tag.slice(0, 2);
-  const same = vs.filter((v) => v.lang && v.lang.toLowerCase().replace('_', '-').startsWith(l));
-  return same.find((v) => v.lang.replace('_', '-') === tag && /female|samantha|paulina|monica|luciana|amelie|anna|google/i.test(v.name))
-    || same.find((v) => v.lang.replace('_', '-') === tag) || same[0] || null;
+  const l = tag.slice(0, 2).toLowerCase(), norm = (v) => String(v.lang || '').toLowerCase().replace('_', '-');
+  const same = vs.filter((v) => norm(v).startsWith(l));
+  const good = /natural|neural|enhanced|premium|samantha|ava|allison|zoe|paulina|monica|luciana|amelie|aurelie|anna|helena|joana|female|google/i;
+  return same.find((v) => norm(v) === tag.toLowerCase() && good.test(v.name)) || same.find((v) => good.test(v.name))
+    || same.find((v) => norm(v) === tag.toLowerCase()) || same[0] || null;
+}
+const SILENT = 'data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tQxAADB8AhSmxhIIEVCSiJrDCQBTcu3UrAIwUdkRgQbFAZC1CQEwTJ9mjRvBA4UOLD8nKVOWfh+UlK3z/177OXrfOdKl7pyn3Xf//WreyTRUoAWgBgkOAGbZHBgG1OF6zM82DWbZaUmMBptgQhGjsyYqc9ae9XFz280948NMBWInljyzsNRFLPWdnZGWrddDsjK1unuSrVN9jJsK8KuQtQCtMBjCEtImISdNKJOopIpBFpNSMbIHCSRpRR5iakjTiyzLhchUUBwCgyKiweBv/7UsQbg8isVNoMPMjAAAA0gAAABEVFGmgqK////9bP/6XCykxBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq';
+function unlockAudio() {
+  if (V.audioOk) return;
+  try { V.audio = V.audio || new Audio(); V.audio.src = SILENT; const p = V.audio.play(); if (p) p.then(() => { V.audioOk = true; }).catch(() => {}); } catch {}
+}
+// Natural voice from the server (English, Spanish). Returns false so the caller can fall back.
+async function naturalSay(say, lang) {
+  if (!['en', 'es'].includes(lang)) return false;
+  try {
+    const res = await fetch('/api/polly/speak', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: say, lang }) });
+    if (!res.ok || !/audio/.test(res.headers.get('content-type') || '')) return false;
+    const url = URL.createObjectURL(await res.blob());
+    const a = V.audio || (V.audio = new Audio());
+    a.onended = () => { URL.revokeObjectURL(url); afterSpeak(); };
+    a.onerror = () => { URL.revokeObjectURL(url); voiceShow('idle'); };
+    a.src = url;
+    voiceShow('speaking');
+    await a.play();
+    return true;
+  } catch { return false; }
 }
 function pollySpeak(text, drops, lang) {
-  if (!V.speak || !window.speechSynthesis) { afterSpeak(); return; }
+  if (!V.speak) { afterSpeak(); return; }
   const tag = (POLLY_LANGS.find((l) => l[0] === lang) || POLLY_LANGS[0])[3];
   const list = (drops || []).slice(0, 3).map((d, i) => `${d.n || i + 1}. ${d.title}${d.secret ? '' : `, ${fmtD(d.distanceM)}`}`).join('. ');
   const U = { en: ['meters', 'kilometers'], es: ['metros', 'kilómetros'], pt: ['metros', 'quilômetros'], fr: ['mètres', 'kilomètres'], de: ['Meter', 'Kilometer'] }[lang] || ['meters', 'kilometers'];
   const say = `${text} ${list}`.replace(/(\d)\s?km\b/g, `$1 ${U[1]}`).replace(/(\d)\s?m\b/g, `$1 ${U[0]}`).replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, '').replace(/\s+/g, ' ').trim();
   if (!say) { afterSpeak(); return; }
-  try { speechSynthesis.cancel(); } catch {}
+  try { window.speechSynthesis && speechSynthesis.cancel(); } catch {}
+  voiceShow('speaking');
+  naturalSay(say, lang).then((ok) => { if (!ok && V.state === 'speaking') phoneSay(say, tag); });
+}
+function phoneSay(say, tag) {
+  if (!window.speechSynthesis) { afterSpeak(); return; }
   const u = new SpeechSynthesisUtterance(say);
-  u.lang = tag; const v = pickVoice(tag); if (v) u.voice = v; u.rate = 1; u.pitch = 1.1;
+  u.lang = tag; const v = pickVoice(tag); if (v) u.voice = v; u.rate = 1; u.pitch = 1;
   u.onend = afterSpeak; u.onerror = () => voiceShow('idle');
   voiceShow('speaking');
   speechSynthesis.speak(u);

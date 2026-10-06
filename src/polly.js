@@ -375,3 +375,23 @@ export async function pollyListen(req, env, user) {
   }
   return json({ text: String(text).trim().slice(0, 300) });
 }
+
+// Polly's natural voice (Workers AI · Deepgram Aura-2). English and Spanish get a real,
+// warm voice; other languages fall back to the phone's own voice.
+const VOICES = { en: ['@cf/deepgram/aura-2-en', 'thalia'], es: ['@cf/deepgram/aura-2-es', 'estrella'] };
+export async function pollySpeak(req, env, user) {
+  if (!user) return json({ error: 'Please sign in to hear Polly.' }, 401);
+  if (!env.AI) return json({ error: 'Voice is not switched on.' }, 503);
+  const b = await body(req, 4_000);
+  const v = VOICES[b.lang];
+  if (!v) return json({ error: 'No natural voice for this language yet.' }, 404);
+  const text = String(b.text || '').replace(/\s+/g, ' ').trim().slice(0, 700);
+  if (!text) return json({ error: 'Nothing to say.' }, 400);
+  const out = await env.AI.run(v[0], { text, speaker: v[1], encoding: 'mp3' });
+  const headers = { 'content-type': 'audio/mpeg', 'cache-control': 'no-store' };
+  if (out instanceof ReadableStream) return new Response(out, { headers });
+  if (out instanceof Response) return new Response(out.body, { headers });
+  if (out instanceof ArrayBuffer || out instanceof Uint8Array) return new Response(out, { headers });
+  if (out && typeof out.audio === 'string') return new Response(Uint8Array.from(atob(out.audio), (c) => c.charCodeAt(0)), { headers });
+  return json({ error: 'Voice not available right now.' }, 502);
+}
