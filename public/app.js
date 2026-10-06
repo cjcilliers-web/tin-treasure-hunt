@@ -741,7 +741,7 @@ VIEWS.polly = async (el) => {
   <div class="chips psugg">${sugg.map((s) => `<button class="chip" data-s="${esc(s)}">💬 ${esc(s)}</button>`).join('')}</div>
   <div class="chat" id="chat" aria-live="polite"></div>
   <form class="ask" id="askf"><button type="button" class="mic sm" id="mic2" aria-label="${esc(VU.tap)}"><span class="micico">🎤</span></button><input id="q" placeholder="${esc(PL().ph)}" autocomplete="off" aria-label="Ask Polly"><button>Ask</button></form>`;
-  drawChat();
+  drawChat(false);
   $$('[data-s]', el).forEach((b) => (b.onclick = () => { unlockAudio(); pollyAsk(b.dataset.s, true); }));
   $('#askf', el).onsubmit = (e) => { e.preventDefault(); const q = $('#q').value.trim(); if (q) { $('#q').value = ''; pollyAsk(q); } };
   $('#mic2', el).onclick = micTap;
@@ -766,7 +766,7 @@ function voiceShow(state, msg) {
   V.state = state;
   const st = $('#vstate'); if (!st) return;
   const VU = VOICE_UI[PL().code];
-  $$('.mic').forEach((m) => { m.className = `mic ${m.id === 'mic2' ? 'sm ' : ''}${state}`; $('.micico', m).textContent = state === 'speaking' ? '🔊' : state === 'thinking' || state === 'warming' ? '🦜' : '🎤'; });
+  $$('.mic').forEach((m) => { const small = m.id === 'mic2'; m.className = `mic ${small ? 'sm ' : ''}${state}`; $('.micico', m).textContent = state === 'speaking' ? (small ? '🔊' : '🦜') : state === 'thinking' || state === 'warming' ? '🦜' : '🎤'; });
   const text = msg || { idle: VU.tap, listening: VU.listening, thinking: VU.thinking, warming: VU.warming, speaking: VU.speaking }[state] || VU.tap;
   st.textContent = text;
   const q = $('#q'); if (q) q.placeholder = state === 'idle' && !msg ? PL().ph : text;
@@ -894,12 +894,13 @@ function afterSpeak() {
 }
 try { window.speechSynthesis && speechSynthesis.getVoices(); window.speechSynthesis && (speechSynthesis.onvoiceschanged = () => {}); } catch {}
 
-function drawChat() {
+function drawChat(scroll = true) {
   const c = $('#chat'); if (!c) return;
   c.innerHTML = S.chat.map((m) => `<div class="msg ${m.p ? 'p' : 'u'}">${esc(m.t)}${m.drops?.length ? `<div class="mini">${m.drops.map((d) => `<button data-d="${d.id}">${d.n ? `<b>${d.n}.</b> ` : ''}${tIco(d)} ${esc(d.title)} · ${d.secret ? '🔒 secret spot' : fmtD(d.distanceM)}</button>`).join('')}</div>` : ''}</div>`).join('');
   $$('[data-d]', c).forEach((b) => (b.onclick = () => { voiceStop(); go('detail', Number(b.dataset.d)); }));
   // Show the newest message (Polly's answer) where the explorer is looking.
   const last = c.lastElementChild;
+  if (!scroll) { const scr = $('#screen'); if (scr) scr.scrollTop = 0; return; }
   if (last) requestAnimationFrame(() => last.scrollIntoView({ behavior: 'smooth', block: 'center' }));
 }
 
