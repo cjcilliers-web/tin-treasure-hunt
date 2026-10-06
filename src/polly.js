@@ -13,6 +13,7 @@
 //      Sunday raffle.
 import { body, json, str, distanceM, walkMin, nextRaffleAt, lastRaffleAt, iso, getSettings } from './lib.js';
 import { liveDrops } from './hunt.js';
+import { costNeurons, canAfford, chargePolly, pollyAccount } from './polly-credits.js';
 
 export const LANGS = ['en', 'es', 'pt', 'fr', 'de'];
 
@@ -67,8 +68,10 @@ export function ruleIntent(q) {
   return intent;
 }
 
-async function aiIntent(env, q, base) {
+async function aiIntent(env, q, base, user) {
   if (!env.AI || q.length < 4) return base;
+  // Understanding free-form questions uses AI: charged to the explorer's Polly Credits.
+  if (!user || !(await canAfford(env, user.id, 15))) return base;
   try {
     const prompt = `Extract a treasure-hunt search intent from the traveler's message. Reply with JSON only, keys:
 categories (array from ${JSON.stringify(Object.keys(CAT_WORDS))}), kids (bool), maxMinutes (number or null), walkOnly (bool),
@@ -77,6 +80,8 @@ lang (one of ${JSON.stringify(LANGS)}).
 Message: ${JSON.stringify(q)}`;
     const run = env.AI.run('@cf/meta/llama-3.1-8b-instruct', { messages: [{ role: 'user', content: prompt }], max_tokens: 200 });
     const out = await Promise.race([run, new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 2500))]);
+    await chargePolly(env, user.id, 'think', '@cf/meta/llama-3.1-8b-instruct', Math.round(prompt.length / 4) + 80,
+      costNeurons('@cf/meta/llama-3.1-8b-instruct', { inTokens: Math.round(prompt.length / 4), outTokens: Math.min(200, Math.round(String(out?.response || '').length / 4) || 80) }));
     const m = String(out?.response || '').match(/\{[\s\S]*\}/);
     if (!m) return base;
     const a = JSON.parse(m[0]);
@@ -257,7 +262,7 @@ async function context(env, user, destId, b) {
 export async function askPolly(req, env, user) {
   const b = await body(req, 5_000);
   const q = str(b.q, { min: 1, max: 400, name: 'Question' });
-  let intent = await aiIntent(env, q, ruleIntent(q));
+  let intent = await aiIntent(env, q, ruleIntent(q), user);
   // No language clues and not obviously English: answer in the account's language.
   if (!detectLang(q) && !intent.ai && user && LANGS.includes(user.language) && user.language !== 'en'
       && !/\b(the|what|where|how|find|show|want|have|treasures?|credits?|me|my|i)\b/i.test(q)) intent.lang = user.language;
@@ -361,17 +366,21 @@ export async function pollyListen(req, env, user) {
   const buf = await req.arrayBuffer();
   if (!buf.byteLength) return json({ error: 'I did not hear anything. Please try again.' }, 400);
   if (buf.byteLength > 3_000_000) return json({ error: 'That was a bit long. Please ask in one short sentence.' }, 413);
+  if (!(await canAfford(env, user.id, 5))) return json({ error: 'Your Polly Credits are used up. Top up to talk to Polly.', outOfCredits: true }, 402);
   const url = new URL(req.url);
   const lang = LANGS.includes(url.searchParams.get('lang')) ? url.searchParams.get('lang') : undefined;
   const bytes = new Uint8Array(buf);
+  const minutes = Math.max(1 / 60, buf.byteLength / 16000 / 60); // ~16 KB per second of speech
   let text = '';
   try {
     let bin = ''; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
     const r = await env.AI.run('@cf/openai/whisper-large-v3-turbo', { audio: btoa(bin), ...(lang ? { language: lang } : {}) });
     text = r?.text || '';
+    await chargePolly(env, user.id, 'listen', '@cf/openai/whisper-large-v3-turbo', minutes, costNeurons('@cf/openai/whisper-large-v3-turbo', { minutes }));
   } catch {
     const r = await env.AI.run('@cf/openai/whisper', { audio: [...bytes] });
     text = r?.text || '';
+    await chargePolly(env, user.id, 'listen', '@cf/openai/whisper', minutes, costNeurons('@cf/openai/whisper', { minutes }));
   }
   return json({ text: String(text).trim().slice(0, 300) });
 }
@@ -399,12 +408,23 @@ export async function pollySpeak(req, env, user) {
   if (!list) return json({ error: 'No natural voice for this language yet.' }, 404);
   const text = String(b.text || '').replace(/\s+/g, ' ').trim().slice(0, 700);
   if (!text) return json({ error: 'Nothing to say.' }, 400);
+  const need = costNeurons(list[0][0], { chars: text.length });
+  if (!(await canAfford(env, user.id, need))) {
+    const a = await pollyAccount(env, user.id);
+    return json({ error: 'Your Polly Credits are used up. Top up to hear Polly again.', outOfCredits: true, credits: a.credits }, 402);
+  }
   const errors = [];
   for (const [model, opts] of list) {
     try {
       const input = model.includes('melotts') ? { prompt: text, ...opts } : { text, encoding: 'mp3', ...opts };
       const res = await audioResponse(await env.AI.run(model, input));
-      if (res) { res.headers.set('x-polly-voice', model.split('/').pop()); return res; }
+      if (res) {
+        const minutes = text.length / 900; // ~15 characters per second of speech
+        await chargePolly(env, user.id, 'voice', model, text.length, costNeurons(model, { chars: text.length, minutes }));
+        res.headers.set('x-polly-voice', model.split('/').pop());
+        res.headers.set('x-polly-credits', String((await pollyAccount(env, user.id)).credits));
+        return res;
+      }
       errors.push(`${model}: empty`);
     } catch (e) { errors.push(`${model}: ${String(e && e.message || e).slice(0, 160)}`); }
   }

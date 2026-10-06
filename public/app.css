@@ -476,3 +476,12 @@ video.scan{width:100%;border-radius:12px;background:#000;aspect-ratio:1;object-f
 .cwrap{position:relative}
 .xclose{position:absolute;top:84px;right:12px;z-index:5;width:44px;height:44px;border-radius:50%;border:2px solid #fff;background:rgba(7,16,15,.78);color:#fff;font-size:1.3rem;font-weight:800;display:grid;place-items:center;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.45)}
 .xclose:active{transform:scale(.92);background:var(--gold);color:#1a1405}
+
+/* Polly Credits */
+.pcredits{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-radius:14px;border:1px solid rgba(217,169,63,.45);background:rgba(217,169,63,.08);font-size:1rem}
+.pcredits b{color:var(--gold-hi);font-size:1.1rem}
+.pcredits.low{border-color:#e0464b;background:rgba(224,70,75,.1)}
+.pcredits .sbtn{flex:none}
+.ptopup{display:grid;gap:10px;padding:14px;border-radius:16px;border:2px solid var(--gold);background:linear-gradient(135deg,rgba(217,169,63,.16),rgba(63,182,168,.08))}
+.ppacks{display:grid;gap:8px}
+.ppacks .btn{font-size:1.05rem}
