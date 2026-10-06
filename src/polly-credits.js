@@ -20,13 +20,26 @@ export function costNeurons(model, { chars = 0, minutes = 0, inTokens = 0, outTo
   return Math.max(1, Math.ceil(n));
 }
 
+export const DEFAULT_SUGGESTIONS = {
+  en: ['Help me find treasure', 'I only want food treasures', 'Treasures within walking distance', 'I have kids', "Make today's hunt last one hour", 'What is open now?', 'How many credits do I have?', 'How many Polly Credits do I have?'],
+  es: ['Ayúdame a encontrar tesoros', 'Solo quiero tesoros de comida', 'Tesoros cerca a pie', 'Tengo niños', 'Haz que la búsqueda de hoy dure una hora', '¿Qué está abierto ahora?', '¿Cuántos créditos tengo?', '¿Cuántos Polly Credits tengo?'],
+  pt: ['Me ajude a achar tesouros', 'Só quero tesouros de comida', 'Tesouros perto a pé', 'Tenho crianças', 'Faça a caça de hoje durar uma hora', 'O que está aberto agora?', 'Quantos créditos eu tenho?', 'Quantos Polly Credits eu tenho?'],
+  fr: ['Aide-moi à trouver des trésors', 'Je veux seulement des trésors à manger', 'Trésors à pied tout près', "J'ai des enfants", "Fais une chasse d'une heure aujourd'hui", "Qu'est-ce qui est ouvert maintenant ?", 'Combien de crédits ai-je ?', 'Combien de Polly Credits ai-je ?'],
+  de: ['Hilf mir, Schätze zu finden', 'Ich möchte nur Essens-Schätze', 'Schätze zu Fuß in der Nähe', 'Ich habe Kinder', 'Plane eine einstündige Schatzsuche', 'Was ist jetzt geöffnet?', 'Wie viele Credits habe ich?', 'Wie viele Polly Credits habe ich?'],
+};
+export async function pollySuggestions(env) {
+  const r = await env.DB.prepare(`SELECT value FROM settings WHERE key = 'polly_suggestions'`).first().catch(() => null);
+  try { const v = JSON.parse(r?.value || ''); if (v && typeof v === 'object') return { ...DEFAULT_SUGGESTIONS, ...v }; } catch {}
+  return DEFAULT_SUGGESTIONS;
+}
+
 async function settings(env) {
   const { results } = await env.DB.prepare(`SELECT key, value FROM settings WHERE key IN ('polly_start_credits','polly_packs')`).all();
   const s = Object.fromEntries(results.map((r) => [r.key, r.value]));
   let packs = [];
   try { packs = JSON.parse(s.polly_packs || '[]').filter((p) => p.credits > 0 && p.usd >= 0.5); } catch {}
   if (!packs.length) packs = [{ credits: 1500, usd: 5 }, { credits: 3500, usd: 10 }];
-  return { startCredits: Number(s.polly_start_credits ?? 100), packs };
+  return { startCredits: Number(s.polly_start_credits ?? 100), packs, suggestions: await pollySuggestions(env) };
 }
 
 // Make sure the explorer has a Polly Credits row (first use gets the starting amount).
@@ -57,7 +70,7 @@ export async function myPollyCredits(req, env, user) {
   requireRole(user);
   const a = await pollyAccount(env, user.id);
   const { packs } = await settings(env);
-  return json({ credits: a.credits, used: a.usedCredits, packs, payments: stripeEnabled(env) ? 'stripe' : 'off' });
+  return json({ credits: a.credits, used: a.usedCredits, packs, payments: stripeEnabled(env) ? 'stripe' : 'off', suggestions: await pollySuggestions(env) });
 }
 
 // POST /api/polly/credits/checkout { pack }
@@ -148,13 +161,23 @@ export async function adminGivePolly(req, env, user) {
 // PUT /api/admin/polly/settings { startCredits, packs:[{credits,usd}] }
 export async function adminPollySettings(req, env, user) {
   requireRole(user, 'admin');
-  const b = await body(req, 4_000);
+  const b = await body(req, 20_000);
   const stmts = [];
   if (b.startCredits !== undefined) stmts.push(env.DB.prepare(`INSERT INTO settings(key, value) VALUES ('polly_start_credits', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).bind(String(num(b.startCredits, { min: 0, max: 100000, int: true, name: 'Starting Polly Credits' }))));
   if (b.packs !== undefined) {
     if (!Array.isArray(b.packs) || !b.packs.length || b.packs.length > 6) bad('Give 1 to 6 packs');
     const packs = b.packs.map((p) => ({ credits: num(p.credits, { min: 1, max: 1000000, int: true, name: 'Pack credits' }), usd: num(p.usd, { min: 0.5, max: 1000, name: 'Pack price' }) }));
     stmts.push(env.DB.prepare(`INSERT INTO settings(key, value) VALUES ('polly_packs', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).bind(JSON.stringify(packs)));
+  }
+  if (b.suggestions !== undefined) {
+    if (!b.suggestions || typeof b.suggestions !== 'object') bad('Suggestions must be a list per language');
+    const out = {};
+    for (const l of ['en', 'es', 'pt', 'fr', 'de']) {
+      const list = Array.isArray(b.suggestions[l]) ? b.suggestions[l] : [];
+      const clean = list.map((x) => String(x).replace(/\s+/g, ' ').trim().slice(0, 80)).filter(Boolean).slice(0, 12);
+      if (clean.length) out[l] = clean;
+    }
+    stmts.push(env.DB.prepare(`INSERT INTO settings(key, value) VALUES ('polly_suggestions', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).bind(JSON.stringify(out)));
   }
   if (stmts.length) await env.DB.batch(stmts);
   return json({ ok: true, settings: await settings(env) });

@@ -493,3 +493,8 @@ video.scan{width:100%;border-radius:12px;background:#000;aspect-ratio:1;object-f
 .iconchips{display:flex;flex-wrap:wrap;gap:8px}
 .ichip{display:inline-flex;align-items:center;gap:4px;font-size:1.7rem;padding:4px 6px 4px 10px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
 .ichip button{border:0;background:rgba(224,70,75,.15);color:#ff8a8f;border-radius:50%;width:24px;height:24px;font-size:.8rem;cursor:pointer}
+/* Polly suggestions: medium size, several per row */
+.psugg{gap:7px}
+.psugg .chip{font-size:.92rem;font-weight:600;padding:8px 12px;border-width:1.5px;border-radius:12px}
+/* Polly suggestions: compact, two or more per row */
+.psugg .chip{font-size:.85rem;font-weight:600;padding:6px 11px;border-radius:999px;border-width:1.5px}

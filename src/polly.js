@@ -276,6 +276,19 @@ export async function askPolly(req, env, user) {
     const { grandForPolly } = await import('./grand.js');
     return json({ reply: await grandForPolly(env, intent.lang === 'es' ? 'es' : 'en'), intent, grand: true });
   }
+  if (/polly/i.test(q) && intent.askCredits) {
+    if (!user) return json({ reply: L.signIn, intent });
+    const a = await pollyAccount(env, user.id);
+    const n = a.credits, talks = Math.floor(n / 7);
+    const reply = {
+      en: `You have ${n} Polly Credits. That is about ${talks} spoken answers. Reading my answers on screen is always free. Tap Top up to add more.`,
+      es: `Tienes ${n} Polly Credits. Eso es alrededor de ${talks} respuestas habladas. Leer mis respuestas en pantalla siempre es gratis. Toca Recargar para añadir más.`,
+      pt: `Você tem ${n} Polly Credits. Isso dá cerca de ${talks} respostas faladas. Ler minhas respostas na tela é sempre grátis.`,
+      fr: `Vous avez ${n} Polly Credits, soit environ ${talks} réponses parlées. Lire mes réponses à l'écran est toujours gratuit.`,
+      de: `Du hast ${n} Polly Credits, das sind etwa ${talks} gesprochene Antworten. Meine Antworten auf dem Bildschirm zu lesen ist immer kostenlos.`,
+    }[intent.lang] || '';
+    return json({ reply, intent, pollyCredits: n });
+  }
   if (intent.askCredits) {
     if (!user) return json({ reply: L.signIn, intent });
     const bal = await env.DB.prepare('SELECT balance FROM treasure_hunt_credits WHERE user_id = ?').bind(user.id).first();
