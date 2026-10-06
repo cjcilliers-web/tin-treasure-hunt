@@ -472,3 +472,7 @@ video.scan{width:100%;border-radius:12px;background:#000;aspect-ratio:1;object-f
 .voice .vstate{font-size:1.1rem}
 .pollyhead .parrot{width:56px;height:56px;font-size:2rem}
 .pollyhead b{font-size:1.2rem}
+/* Close (X) on a treasure: back to the list or map you came from */
+.cwrap{position:relative}
+.xclose{position:absolute;top:84px;right:12px;z-index:5;width:44px;height:44px;border-radius:50%;border:2px solid #fff;background:rgba(7,16,15,.78);color:#fff;font-size:1.3rem;font-weight:800;display:grid;place-items:center;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.45)}
+.xclose:active{transform:scale(.92);background:var(--gold);color:#1a1405}

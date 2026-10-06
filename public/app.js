@@ -234,6 +234,7 @@ const NAVS = {
 };
 
 function go(view, arg = null) {
+  if (view === 'detail' && S.view !== 'detail' && S.view !== 'qr') S.backTo = S.view;
   S.view = view; S.arg = arg;
   if (S.poll) { clearInterval(S.poll); S.poll = null; }
   stopCamera();
@@ -539,8 +540,9 @@ function drawQr(root, code) {
 VIEWS.detail = async (el, id) => {
   const { drop: d, claim } = await api(`/api/drops/${id}?x=1${hereQs()}`);
   const dirUrl = Number.isFinite(d.lat) ? `https://www.google.com/maps/dir/?api=1&destination=${d.lat},${d.lng}&travelmode=walking` : null;
-  el.innerHTML = `<button class="back" id="bk">← Back to treasures</button>
-  ${couponHtml(d, claim)}
+  const back = ['hunt', 'map', 'polly', 'claims'].includes(S.backTo) ? S.backTo : 'hunt';
+  el.innerHTML = `<button class="back" id="bk">← Back to ${({ hunt: 'treasures', map: 'the map', polly: 'Polly', claims: 'my codes' })[back]}</button>
+  <div class="cwrap">${couponHtml(d, claim)}<button class="xclose" id="xc" aria-label="Close this treasure">✕</button></div>
   ${d.hidden ? `<div class="warmth" id="warm">${warmHtml(d)}</div>` : ''}
   <div class="facts">
     <div class="fact"><div class="k">${d.hidden === 'secret' ? 'Hint' : 'Walk'}</div><div class="v" id="walkv">${d.hidden === 'secret' ? distTxt(d) : `${distTxt(d)} · ${d.walkMin ?? '?'} min`}</div></div>
@@ -554,7 +556,8 @@ VIEWS.detail = async (el, id) => {
     `<div class="gate" id="gate"></div><button class="btn" id="claim">Claim this treasure</button>`}
   ${d.hidden === 'secret' ? '' : `<a class="btn ghost" href="${dirUrl}" target="_blank" rel="noopener">${d.hidden === 'circle' ? 'Directions to the search circle' : 'Walking directions'}</a>`}`;
   wireGallery(el);
-  $('#bk', el).onclick = () => go('hunt');
+  $('#bk', el).onclick = () => go(back);
+  $('#xc', el).onclick = () => go(back);
   const c = $('#claim', el);
   if (c) {
     S.gate = () => claimGate(d, c);
