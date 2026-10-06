@@ -258,6 +258,8 @@ export async function askPolly(req, env, user) {
   // No language clues and not obviously English: answer in the account's language.
   if (!detectLang(q) && !intent.ai && user && LANGS.includes(user.language) && user.language !== 'en'
       && !/\b(the|what|where|how|find|show|want|have|treasures?|credits?|me|my|i)\b/i.test(q)) intent.lang = user.language;
+  // The explorer picked a language on Polly's screen: always answer in it.
+  if (LANGS.includes(b.lang)) intent.lang = b.lang;
   const L = T[intent.lang] || T.en;
   const set = await getSettings(env.DB);
 
@@ -347,3 +349,26 @@ export async function pollyTip(req, env, user) {
   return json({ kind: 'none', text: L.none, emoji: '🦜', dest: dest.id });
 }
 const nearestAsk = (lang) => ({ en: 'What is the closest treasure?', es: '¿Cuál es el tesoro más cercano?', pt: 'Qual é o tesouro mais perto?', fr: 'Quel est le trésor le plus proche ?', de: 'Welcher Schatz ist am nächsten?' }[lang]);
+
+// Voice: turns a short recording into text with Workers AI (Whisper).
+// Used only by phones/browsers that cannot do speech recognition themselves.
+export async function pollyListen(req, env, user) {
+  if (!user) return json({ error: 'Please sign in to talk to Polly.' }, 401);
+  if (!env.AI) return json({ error: "Polly's voice is not switched on yet. Please type your question." }, 503);
+  const buf = await req.arrayBuffer();
+  if (!buf.byteLength) return json({ error: 'I did not hear anything. Please try again.' }, 400);
+  if (buf.byteLength > 3_000_000) return json({ error: 'That was a bit long. Please ask in one short sentence.' }, 413);
+  const url = new URL(req.url);
+  const lang = LANGS.includes(url.searchParams.get('lang')) ? url.searchParams.get('lang') : undefined;
+  const bytes = new Uint8Array(buf);
+  let text = '';
+  try {
+    let bin = ''; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    const r = await env.AI.run('@cf/openai/whisper-large-v3-turbo', { audio: btoa(bin), ...(lang ? { language: lang } : {}) });
+    text = r?.text || '';
+  } catch {
+    const r = await env.AI.run('@cf/openai/whisper', { audio: [...bytes] });
+    text = r?.text || '';
+  }
+  return json({ text: String(text).trim().slice(0, 300) });
+}
