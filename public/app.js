@@ -28,8 +28,10 @@ const ICON = {
   star: '<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>',
 };
 const ico = (n) => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICON[n]}</svg>`;
-const CATS = ['Food', 'Drink', 'Dessert', 'Adventure', 'Shopping', 'Mystery'];
-const CAT_EMO = { Food: '🍔', Drink: '🍺', Dessert: '🍦', Adventure: '🧭', Shopping: '🛍️', Mystery: '🎁' };
+const CATS = ['Food', 'Drink', 'Dessert', 'Adventure', 'Shopping', 'Services', 'Transportation', 'Mystery'];
+const CAT_EMO = { Food: '🍔', Drink: '🍺', Dessert: '🍦', Adventure: '🧭', Shopping: '🛍️', Services: '💈', Transportation: '🚕', Mystery: '🎁' };
+// A treasure's icon: its own picture if the merchant added one, else the emoji.
+const tIco = (x) => (x && x.icon ? `<img class="dico" src="${esc(x.icon)}" alt="">` : esc(x?.emoji || '🎁'));
 const RADII = [100, 1000, 5000, 10000, 50000]; // last stop = everything
 const usdc = (c) => `$${(Number(c || 0) / 100).toFixed(2)}`; // cents → $0.00
 
@@ -365,7 +367,7 @@ async function loadTip(el) {
     box.hidden = false;
     box.innerHTML = `<div style="display:flex;gap:10px;align-items:flex-start"><span class="parrot" style="width:32px;height:32px;font-size:1rem;flex:none">🦜</span><div style="display:grid;gap:8px;min-width:0">
       <span>${esc(tip.text)}</span>
-      ${tip.drops?.length ? `<div class="mini" style="display:grid;gap:6px">${tip.drops.map((d) => `<button class="chip" style="text-align:left" data-td="${d.id}">${esc(d.emoji)} ${esc(d.title)} · ${fmtD(d.distanceM)}</button>`).join('')}</div>` : ''}
+      ${tip.drops?.length ? `<div class="mini" style="display:grid;gap:6px">${tip.drops.map((d) => `<button class="chip" style="text-align:left" data-td="${d.id}">${tIco(d)} ${esc(d.title)} · ${fmtD(d.distanceM)}</button>`).join('')}</div>` : ''}
       ${tip.action === 'qr' ? `<button class="sbtn gold" data-tq="${tip.dropId}" style="justify-self:start">${esc(PL().showCode)}</button>` : ''}
       ${tip.ask ? `<button class="sbtn" data-ta style="justify-self:start">${esc(PL().yes)}</button>` : ''}</div></div>`;
     $$('[data-td]', box).forEach((b) => (b.onclick = () => go('detail', Number(b.dataset.td))));
@@ -378,7 +380,7 @@ const radLabel = (i) => (i === RADII.length - 1 ? 'All' : fmtD(RADII[i]));
 
 function dropCard(d) {
   const st = d.myStatus === 'redeemed' ? 'Found ✓' : d.myStatus === 'claimed' ? 'Claimed' : `${d.remaining} left`;
-  return `<button class="drop ${d.myStatus === 'redeemed' ? 'done' : ''}" data-d="${d.id}"><span class="chest">${esc(d.emoji)}</span>
+  return `<button class="drop ${d.myStatus === 'redeemed' ? 'done' : ''}" data-d="${d.id}"><span class="chest">${tIco(d)}</span>
     <span><div class="n">${esc(d.title)}</div><div class="m">${d.mystery ? 'Mystery reward' : esc(d.item)} · ${esc(d.merchant)}</div>
     <div class="m">${esc(d.difficulty)} · ${d.rating ? `★ ${Number(d.rating).toFixed(1)}` : 'New'}</div></span>
     <span class="d">${fmtD(d.distanceM)}<small>${st}</small></span></button>`;
@@ -408,7 +410,7 @@ VIEWS.map = async (el) => {
   const pts = [];
   data.drops.forEach((d) => {
     pts.push([d.lat, d.lng]);
-    L.marker([d.lat, d.lng], { icon: L.divIcon({ className: '', html: `<div class="pinx">${esc(d.emoji)}</div>`, iconSize: [30, 30] }) })
+    L.marker([d.lat, d.lng], { icon: L.divIcon({ className: '', html: `<div class="pinx">${tIco(d)}</div>`, iconSize: [30, 30] }) })
       .addTo(leafletMap)
       .bindPopup(`<b>${esc(d.title)}</b><br>${esc(d.merchant)} · ${fmtD(d.distanceM)}<br><button data-open="${d.id}">Open</button>`);
   });
@@ -431,7 +433,7 @@ function couponHtml(d, claim, { stub = false } = {}) {
   const n = Math.max(d.photoCount || 0, 0);
   const slides = n
     ? Array.from({ length: n }, (_, i) => `<img src="/api/drops/${d.id}/photos/${i}" alt="${esc(d.title)} photo ${i + 1}" loading="lazy">`).join('')
-    : `<div class="cp-art"><span>${esc(d.emoji)}</span><small>${esc(d.category)}</small></div>`;
+    : `<div class="cp-art"><span>${tIco(d)}</span><small>${esc(d.category)}</small></div>`;
   const limit = S.settings.claimRadius ?? 10;
   const terms = [
     'Completely free. No purchase needed.',
@@ -453,7 +455,7 @@ function couponHtml(d, claim, { stub = false } = {}) {
       <div class="cp-dots">${Array.from({ length: n }, (_, i) => `<i class="${i ? '' : 'on'}"></i>`).join('')}</div>` : ''}
     </div>
     <div class="cp-body">
-      <div class="cp-title">${esc(d.emoji)} ${esc(d.title)}</div>
+      <div class="cp-title">${tIco(d)} ${esc(d.title)}</div>
       <div class="cp-reward">${d.item ? esc(d.item) : '🎁 Mystery reward, revealed when you claim'}</div>
       <div class="cp-value">${d.value ? `Value $${Number(d.value).toFixed(0)} · ` : ''}<b>FREE</b> · ${esc(d.difficulty)}</div>
       <p class="clue">${esc(d.story)}</p>
@@ -560,7 +562,7 @@ VIEWS.rate = async (el, id) => {
   if (claim.rating_id) { el.innerHTML = `<p class="empty">Thanks, you already rated ${esc(d.merchant)}.</p>`; return; }
   const scores = {};
   const scale = (k, q) => `<div class="rate"><div class="q">${q}</div><div class="scale" data-k="${k}">${Array.from({ length: 10 }, (_, i) => `<button data-n="${i + 1}" aria-label="${i + 1} of 10">${i + 1}</button>`).join('')}</div></div>`;
-  el.innerHTML = `<div class="hero"><span class="big">${esc(d.emoji)}</span><h2>How was ${esc(d.merchant)}?</h2><div class="note">Your rating helps great treasures rise to the top.</div></div>
+  el.innerHTML = `<div class="hero"><span class="big">${tIco(d)}</span><h2>How was ${esc(d.merchant)}?</h2><div class="note">Your rating helps great treasures rise to the top.</div></div>
   ${scale('ease', 'How easy was it to find?')}${scale('speed', 'How fast was the redemption?')}${scale('overall', 'Overall experience')}
   <div class="form"><label>Anything to add? (optional)<textarea id="cm" maxlength="500"></textarea></label></div>
   <button class="btn" id="send">Send rating</button><button class="back" id="skip" style="text-align:center">Skip for now</button>`;
@@ -577,7 +579,7 @@ VIEWS.claims = async (el) => {
   const { claims } = await api('/api/me/claims');
   const open = claims.filter((c) => c.status === 'claimed'), done = claims.filter((c) => c.status === 'redeemed');
   const row = (c) => `<button class="drop ${c.status === 'redeemed' ? 'done' : ''}" data-d="${c.drop_id}" data-s="${c.status}" data-r="${c.redemption_id && !c.overall_score ? 1 : 0}">
-    <span class="chest">${esc(c.emoji)}</span><span><div class="n">${esc(c.title)}</div><div class="m">${esc(c.item)} · ${esc(c.merchant)}</div></span>
+    <span class="chest">${tIco(c)}</span><span><div class="n">${esc(c.title)}</div><div class="m">${esc(c.item)} · ${esc(c.merchant)}</div></span>
     <span class="d">${c.status === 'redeemed' ? `+${c.credits_awarded}<small>${c.overall_score ? `★ ${c.overall_score}` : 'Rate it'}</small>` : `${esc(fmtCode(c.code))}<small>Show coupon</small>`}</span></button>`;
   el.innerHTML = `<h3 style="margin:0;font-family:var(--f-display);font-weight:400">My codes</h3>
     ${open.length ? open.map(row).join('') : '<p class="empty">No open codes. Claim a treasure to get one.</p>'}
@@ -790,7 +792,7 @@ try { window.speechSynthesis && speechSynthesis.getVoices(); window.speechSynthe
 
 function drawChat() {
   const c = $('#chat'); if (!c) return;
-  c.innerHTML = S.chat.map((m) => `<div class="msg ${m.p ? 'p' : 'u'}">${esc(m.t)}${m.drops?.length ? `<div class="mini">${m.drops.map((d) => `<button data-d="${d.id}">${d.n ? `<b>${d.n}.</b> ` : ''}${esc(d.emoji)} ${esc(d.title)} · ${fmtD(d.distanceM)}</button>`).join('')}</div>` : ''}</div>`).join('');
+  c.innerHTML = S.chat.map((m) => `<div class="msg ${m.p ? 'p' : 'u'}">${esc(m.t)}${m.drops?.length ? `<div class="mini">${m.drops.map((d) => `<button data-d="${d.id}">${d.n ? `<b>${d.n}.</b> ` : ''}${tIco(d)} ${esc(d.title)} · ${fmtD(d.distanceM)}</button>`).join('')}</div>` : ''}</div>`).join('');
   $$('[data-d]', c).forEach((b) => (b.onclick = () => { voiceStop(); go('detail', Number(b.dataset.d)); }));
   const scr = $('#screen'); scr.scrollTop = scr.scrollHeight;
 }
@@ -918,6 +920,20 @@ function proof(c) {
   };
 }
 
+// Icon picture: square-ish, max 160 px, keeps transparency (PNG), WebP if PNG is large.
+function iconShrink(file) {
+  return new Promise((res, rej) => {
+    const img = new Image(); const u = URL.createObjectURL(file);
+    img.onload = () => {
+      const s = Math.min(1, 160 / Math.max(img.width, img.height)); const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(img.width * s)); c.height = Math.max(1, Math.round(img.height * s));
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(u);
+      let out = c.toDataURL('image/png'); if (out.length > 100_000) out = c.toDataURL('image/webp', 0.85);
+      res(out);
+    };
+    img.onerror = rej; img.src = u;
+  });
+}
 function shrink(file, max, q) {
   return new Promise((res, rej) => {
     const img = new Image(); const u = URL.createObjectURL(file);
@@ -937,7 +953,7 @@ VIEWS.mList = async (el) => {
   ${creditsCard()}
   <div id="mvid"></div>
   <button class="btn" id="nd">＋ Create a new treasure</button>
-  ${drops.length ? drops.map((d) => `<div class="card" style="gap:8px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b>${esc(d.emoji)} ${esc(d.title)}</b>${pill(d.status, d)}</div>
+  ${drops.length ? drops.map((d) => `<div class="card" style="gap:8px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b>${tIco(d)} ${esc(d.title)}</b>${pill(d.status, d)}</div>
     <div class="note">${esc(d.item)} · ${d.remaining}/${d.quantity} left · ${d.redeemed} redeemed · ${d.waiting} waiting</div>
     ${d.paymentStatus === 'unpaid' ? `<div class="note" style="color:var(--warn)">💳 $${d.fee} to pay before TIN HQ can approve</div>` : d.paymentStatus === 'paid' ? '<div class="note" style="color:var(--ok)">💳 Paid</div>' : ''}
     <div class="row">${d.paymentStatus === 'unpaid' ? `<button class="sbtn gold" data-pay="${d.id}">Pay $${d.fee}</button>` : ''}${d.status === 'active' ? `<button class="sbtn stop" data-p="${d.id}">Pause</button>` : d.status === 'paused' ? `<button class="sbtn go" data-r="${d.id}">Resume</button>` : ''}<button class="sbtn" data-e="${d.id}">Edit</button></div></div>`).join('')
@@ -1107,9 +1123,14 @@ function dropForm(el, d) {
     <label>What's the free reward?<input id="it" required maxlength="120" placeholder="e.g. Free burger" value="${esc(d?.item || '')}"></label>
     <label>What's the story behind this find? (required)<textarea id="cl" required minlength="10" maxlength="600" placeholder="Captain Morgan left this burger near the place where travelers first arrive on the island. Can you find it before another explorer does?">${esc(d?.story || '')}</textarea></label>
     <label>Treasure type<select id="ct">${CATS.map((c) => `<option ${d?.category === c ? 'selected' : ''}>${c}</option>`).join('')}</select></label>
-    <div class="icon-pick"><span class="icon-pick-title">Icon <b id="emShow">${esc(d?.emoji || '🎁')}</b></span><input type="hidden" id="em" value="${esc(d?.emoji || '🎁')}">
-      <div class="icon-grid" role="radiogroup" aria-label="Choose an icon">${['🍔', '🌮', '🍕', '🦞', '🍣', '🥐', '🍰', '☕', '🍹', '🍺', '🍷', '🍾', '🥂', '🍸', '🥃', '🍦', '🍫', '🤿', '🐢', '🐠', '🛶', '🚤', '⛵', '🎣', '🏄', '🛵', '🚲', '🏖️', '💆', '💅', '🕶️', '👗', '💎', '🛍️', '🎟️', '🎉', '⭐', '🎁', '🗝️'].map((e) => `<button type="button" role="radio" class="icon-opt${(d?.emoji || '🎁') === e ? ' on' : ''}" aria-checked="${(d?.emoji || '🎁') === e}" data-em="${e}">${e}</button>`).join('')}</div>
-      <label class="icon-own">Or paste any emoji<input id="emOwn" maxlength="8" placeholder="e.g. 🍾" autocomplete="off"></label></div>
+    <div class="icon-pick"><span class="icon-pick-title">Icon <b id="emShow">${tIco(d || {})}</b></span><input type="hidden" id="em" value="${esc(d?.emoji || '🎁')}">
+      <div class="icon-grid" role="radiogroup" aria-label="Choose an icon">${['🍔', '🌮', '🍕', '🦞', '🍣', '🥐', '🍰', '☕', '🍹', '🍺', '🍷', '🍾', '🥂', '🍸', '🥃', '🍦', '🍫', '🤿', '🐢', '🐠', '🛶', '🚤', '⛵', '🎣', '🏄', '🛵', '🚲', '🏖️', '💆', '💅', '💇', '💈', '✂️', '🧺', '🔧', '🚕', '🚗', '🚌', '⛴️', '🕶️', '👗', '💎', '🛍️', '🎟️', '🎉', '⭐', '🎁', '🗝️'].map((e) => `<button type="button" role="radio" class="icon-opt${(d?.emoji || '🎁') === e ? ' on' : ''}" aria-checked="${(d?.emoji || '🎁') === e}" data-em="${e}">${e}</button>`).join('')}</div>
+      <label class="icon-own">Or paste any emoji<input id="emOwn" maxlength="8" placeholder="e.g. 🍾" autocomplete="off"></label>
+      <div class="icon-drop" id="icDrop" tabindex="0" aria-label="Your own icon picture: drop, paste or browse">
+        <span class="icon-drop-art" id="icPrev">${d?.icon ? `<img src="${esc(d.icon)}" alt="">` : '🖼️'}</span>
+        <span><b>Or use your own picture</b><br><span class="note">Drag it here, paste it (Ctrl+V), or</span> <label class="sbtn" style="cursor:pointer;display:inline-block;padding:4px 10px">Browse…<input type="file" accept="image/*" hidden id="icFile"></label>
+        <button type="button" class="sbtn" id="icRm" ${d?.icon ? '' : 'hidden'} style="padding:4px 10px">Remove picture</button></span>
+      </div></div>
     <div class="two"><label>Difficulty<select id="df">${['Easy', 'Medium', 'Hard'].map((x) => `<option ${d?.difficulty === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
       <label>Retail value (USD)<input id="vl" type="number" min="0" step="0.5" value="${d?.value ?? 5}"></label></div>
     ${edit ? '' : `<label>How many drops<input id="qt" type="number" min="1" max="1000" value="10" required></label>`}
@@ -1146,8 +1167,27 @@ function dropForm(el, d) {
   $('#bk', el).onclick = () => go('mList');
   // Big icon picker: tap an icon, or paste any emoji in the box below the grid.
   const pickIcon = (val) => { const em = $('#em', el); em.value = val; $('#emShow', el).textContent = val; $$('.icon-opt', el).forEach((b) => { const on = b.dataset.em === val; b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on)); }); em.dispatchEvent(new Event('change')); };
-  $$('.icon-opt', el).forEach((b) => (b.onclick = () => pickIcon(b.dataset.em)));
-  $('#emOwn', el).oninput = (e) => { const v = e.target.value.trim(); if (v && !/[A-Za-z0-9]/.test(v)) pickIcon(v); };
+  // Own icon picture: undefined = unchanged, null = removed, data URL = new picture.
+  let iconData;
+  const showIcon = (src) => {
+    $('#icPrev', el).innerHTML = src ? `<img src="${esc(src)}" alt="">` : '🖼️';
+    $('#icRm', el).hidden = !src;
+    $('#emShow', el).innerHTML = src ? `<img class="dico" src="${esc(src)}" alt="">` : esc($('#em', el).value);
+    $('#icDrop', el).classList.toggle('on', !!src);
+  };
+  const takeIconFile = async (f) => {
+    if (!f || !/^image\//.test(f.type)) { toast('Please choose a picture file'); return; }
+    try { iconData = await iconShrink(f); showIcon(iconData); toast('Icon picture added'); } catch { toast('Could not read that picture'); }
+  };
+  const dz = $('#icDrop', el);
+  ['dragenter', 'dragover'].forEach((t) => dz.addEventListener(t, (e) => { e.preventDefault(); dz.classList.add('drag'); }));
+  ['dragleave', 'drop'].forEach((t) => dz.addEventListener(t, (e) => { e.preventDefault(); dz.classList.remove('drag'); }));
+  dz.addEventListener('drop', (e) => takeIconFile(e.dataTransfer.files[0]));
+  dz.addEventListener('paste', (e) => { const f = [...(e.clipboardData?.files || [])][0]; if (f) { e.preventDefault(); takeIconFile(f); } });
+  $('#icFile', el).onchange = (e) => { takeIconFile(e.target.files[0]); e.target.value = ''; };
+  $('#icRm', el).onclick = () => { iconData = null; showIcon(null); };
+  $$('.icon-opt', el).forEach((b) => (b.onclick = () => { if (iconData || (iconData === undefined && d?.icon)) { iconData = null; showIcon(null); } pickIcon(b.dataset.em); }));
+  $('#emOwn', el).oninput = (e) => { const v = e.target.value.trim(); if (v && !/[A-Za-z0-9]/.test(v)) { if (iconData || (iconData === undefined && d?.icon)) { iconData = null; showIcon(null); } pickIcon(v); } };
   const place = placePicker(el, d);
   const qt = $('#qt', el); if (qt && !hq) qt.oninput = () => { const q = Number(qt.value) || 0; $('#tot').textContent = q; $('#getmore').hidden = q <= have; };
   const gm = $('#getmore', el); if (gm) gm.onclick = () => go('mList');
@@ -1164,6 +1204,7 @@ function dropForm(el, d) {
     if (!edit) body.quantity = Number($('#qt').value);
     const pin = place.get(); body.lat = pin.lat; body.lng = pin.lng;
     if (photos) body.photos = photos;
+    if (iconData !== undefined) body.icon = iconData;
     body.terms = $('#tm').value;
     const btn = $('button[type=submit]', el); btn.disabled = true;
     try {
@@ -1418,7 +1459,7 @@ HQ.drops = async (el) => {
   const { drops } = await api('/api/admin/drops');
   const pill = (s) => `<span class="pill ${s === 'active' ? 'live' : s === 'rejected' || s === 'expired' ? 'ended' : s}">${s === 'active' ? 'live' : s}</span>`;
   el.innerHTML = `<div class="card"><h3>Treasure Drops</h3><div class="tbl"><table><thead><tr><th>Treasure</th><th>Merchant</th><th>Where</th><th>Story</th><th>Status</th><th>Payment</th><th class="n">Left</th><th class="n">Redeemed</th><th class="n">Fee</th><th></th></tr></thead><tbody>
-  ${drops.map((d) => `<tr><td>${esc(d.emoji)} <b>${esc(d.title)}</b><div class="note">${esc(d.item)} · ${esc(d.category)} · ${esc(d.difficulty)}</div></td><td>${esc(d.merchant)}</td><td><a href="https://www.google.com/maps?q=${d.lat},${d.lng}" target="_blank" rel="noopener">📍 Map ↗</a><div class="note">${d.fromBusinessM == null ? '' : d.fromBusinessM < 15 ? 'At the business' : `${fmtD(d.fromBusinessM)} from the business`}</div></td><td style="max-width:300px" class="note">${esc(d.story)}</td><td>${d.blocked ? '<span class="pill ended">🛡️ blocked</span>' : pill(d.status)}</td><td><span class="pill ${d.paymentStatus === 'unpaid' ? 'pending' : d.paymentStatus === 'paid' ? 'live' : 'draft'}">${d.paymentStatus}</span></td>
+  ${drops.map((d) => `<tr><td>${tIco(d)} <b>${esc(d.title)}</b><div class="note">${esc(d.item)} · ${esc(d.category)} · ${esc(d.difficulty)}</div></td><td>${esc(d.merchant)}</td><td><a href="https://www.google.com/maps?q=${d.lat},${d.lng}" target="_blank" rel="noopener">📍 Map ↗</a><div class="note">${d.fromBusinessM == null ? '' : d.fromBusinessM < 15 ? 'At the business' : `${fmtD(d.fromBusinessM)} from the business`}</div></td><td style="max-width:300px" class="note">${esc(d.story)}</td><td>${d.blocked ? '<span class="pill ended">🛡️ blocked</span>' : pill(d.status)}</td><td><span class="pill ${d.paymentStatus === 'unpaid' ? 'pending' : d.paymentStatus === 'paid' ? 'live' : 'draft'}">${d.paymentStatus}</span></td>
     <td class="n">${d.remaining}/${d.quantity}</td><td class="n">${d.redeemed}</td><td class="n">$${d.fee}</td>
     <td>${d.status === 'pending' && d.paymentStatus === 'unpaid' ? `<button class="sbtn" data-waive="${d.id}">Waive fee &amp; approve</button> ` : ''}${d.status === 'pending' && d.paymentStatus !== 'unpaid' ? `<button class="sbtn go" data-s="active" data-id="${d.id}">Approve</button> <button class="sbtn stop" data-s="rejected" data-id="${d.id}">Reject</button>` : d.status === 'pending' ? `<button class="sbtn stop" data-s="rejected" data-id="${d.id}">Reject</button>` : d.status === 'active' ? `<button class="sbtn stop" data-s="paused" data-id="${d.id}">Pause</button>` : d.status === 'paused' ? `<button class="sbtn go" data-s="active" data-id="${d.id}">Resume</button>` : ''}</td></tr>`).join('')}
   </tbody></table></div></div>`;

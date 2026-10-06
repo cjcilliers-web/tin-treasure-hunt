@@ -23,6 +23,7 @@ const routes = [
   ['GET', /^\/api\/drops\/(\d+)$/, (r, e, u, id) => H.getDrop(r, e, u, Number(id))],
   ['GET', /^\/api\/drops\/(\d+)\/photo$/, (r, e, u, id) => H.dropPhoto(r, e, Number(id))],
   ['GET', /^\/api\/drops\/(\d+)\/photos\/(\d)$/, (r, e, u, id, n) => H.dropPhoto(r, e, Number(id), Number(n))],
+  ['GET', /^\/api\/drops\/(\d+)\/icon$/, (r, e, u, id) => H.dropIcon(r, e, Number(id))],
   ['GET', /^\/api\/merchants\/(\d+)\/logo$/, (r, e, u, id) => H.merchantLogo(r, e, Number(id))],
   ['PATCH', /^\/api\/merchant\/me$/, (r, e, u) => H.updateMerchantProfile(r, e, u)],
   ['POST', /^\/api\/drops\/(\d+)\/claim$/, (r, e, u, id) => H.claimDrop(r, e, u, Number(id))],

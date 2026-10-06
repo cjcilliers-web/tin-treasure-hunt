@@ -11,7 +11,7 @@ import { checkShieldsForDrop } from './shield.js';
 // ---------- shared queries ----------
 
 const DROP_COLS = `
-  d.id, d.title, d.item, d.category, d.emoji, d.story_text, d.gps_lat, d.gps_lng, d.walking_distance,
+  d.id, d.title, d.item, d.category, d.emoji, CASE WHEN d.icon IS NOT NULL THEN '/api/drops/' || d.id || '/icon?v=' || length(d.icon) END AS icon_url, d.story_text, d.gps_lat, d.gps_lng, d.walking_distance,
   d.difficulty, d.reward_value_usd, d.is_mystery, d.kid_friendly, d.quantity, d.remaining, (SELECT COUNT(*) FROM drop_photos p WHERE p.drop_id = d.id) AS photo_count, d.terms, m.logo IS NOT NULL AS has_logo,
   d.status, d.created_at, d.destination_id, d.merchant_id, d.payment_status, d.fee_usd, d.blocked_at,
   m.name AS merchant, m.hours, m.category AS merchant_category, m.address, m.lat AS biz_lat, m.lng AS biz_lng,
@@ -21,7 +21,7 @@ const DROP_COLS = `
 export function shapeDrop(r, here, { revealMystery = false } = {}) {
   const m = here ? distanceM(here.lat, here.lng, r.gps_lat, r.gps_lng) : null;
   return {
-    id: r.id, title: r.title, category: r.category, emoji: r.emoji, story: r.story_text,
+    id: r.id, title: r.title, category: r.category, emoji: r.emoji, icon: r.icon_url || null, story: r.story_text,
     item: r.is_mystery && !revealMystery ? null : r.item, mystery: !!r.is_mystery,
     lat: r.gps_lat, lng: r.gps_lng, walkingNote: r.walking_distance, difficulty: r.difficulty,
     value: r.reward_value_usd, kids: !!r.kid_friendly, remaining: r.remaining, quantity: r.quantity,
@@ -118,6 +118,11 @@ export async function dropPhoto(req, env, id, n = 0) {
   return imageResponse(r?.data_url);
 }
 
+export async function dropIcon(req, env, id) {
+  const r = await env.DB.prepare('SELECT icon FROM treasure_drops WHERE id = ?').bind(id).first();
+  return imageResponse(r?.icon, 'public, max-age=86400');
+}
+
 export async function merchantLogo(req, env, id) {
   const r = await env.DB.prepare('SELECT logo FROM merchants WHERE id = ?').bind(id).first();
   return imageResponse(r?.logo, 'public, max-age=600');
@@ -173,7 +178,7 @@ export async function cancelClaim(req, env, user, id) {
 export async function myClaims(req, env, user) {
   requireRole(user);
   const { results } = await env.DB.prepare(
-    `SELECT c.code, c.status, c.created_at, c.expires_at, d.id AS drop_id, d.title, d.item, d.emoji, m.name AS merchant,
+    `SELECT c.code, c.status, c.created_at, c.expires_at, d.id AS drop_id, d.title, d.item, d.emoji, CASE WHEN d.icon IS NOT NULL THEN '/api/drops/' || d.id || '/icon?v=' || length(d.icon) END AS icon, m.name AS merchant,
             x.id AS redemption_id, x.redeemed_at, x.credits_awarded, rr.overall_score
        FROM claims c JOIN treasure_drops d ON d.id = c.drop_id JOIN merchants m ON m.id = d.merchant_id
        LEFT JOIN redemptions x ON x.claim_id = c.id LEFT JOIN redemption_ratings rr ON rr.redemption_id = x.id
@@ -253,6 +258,15 @@ function dropInput(b, partial = false) {
   if (want('item')) out.item = str(b.item, { min: 3, max: 120, name: 'Free reward' });
   if (want('category')) out.category = oneOf(b.category, CATEGORIES, 'Treasure type');
   if (want('emoji')) out.emoji = str(b.emoji || '🎁', { min: 1, max: 16, name: 'Icon' });
+  // Own icon image (optional): a small picture used instead of the emoji. null removes it.
+  if (b.icon !== undefined) {
+    if (b.icon === null || b.icon === '') out.icon = null;
+    else {
+      if (typeof b.icon !== 'string' || !/^data:image\/(png|jpeg|webp);base64,/.test(b.icon)) bad('Icon picture must be a PNG, JPEG or WebP image');
+      if (b.icon.length > 120_000) bad('Icon picture is too large; please use a smaller image');
+      out.icon = b.icon;
+    }
+  }
   if (want('story')) out.story_text = str(b.story, { min: 10, max: 600, name: 'The story behind this find' });
   if (want('difficulty')) out.difficulty = oneOf(b.difficulty || 'Easy', DIFFICULTIES, 'Difficulty');
   if (want('walkingNote')) out.walking_distance = b.walkingNote ? str(b.walkingNote, { max: 120, name: 'Walking distance' }) : null;
@@ -316,10 +330,10 @@ export async function createDrop(req, env, user) {
     bad(`You have ${m.drop_credits ?? 0} drop credit${m.drop_credits === 1 ? '' : 's'} and this treasure needs ${quantity}. Buy more drops first.`, 402);
   const row = await env.DB.prepare(
     `INSERT INTO treasure_drops(merchant_id, destination_id, title, item, category, emoji, story_text, gps_lat, gps_lng, walking_distance,
-       difficulty, reward_value_usd, is_mystery, kid_friendly, quantity, remaining, fee_usd, terms, status, payment_status)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,'pending',?) RETURNING id, title, item, quantity, status, fee_usd, payment_status`
+       difficulty, reward_value_usd, is_mystery, kid_friendly, quantity, remaining, fee_usd, terms, status, payment_status, icon)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,'pending',?,?) RETURNING id, title, item, quantity, status, fee_usd, payment_status`
   ).bind(mid, m.destination_id, d.title, d.item, d.category, d.emoji, d.story_text, d.gps_lat ?? m.lat, d.gps_lng ?? m.lng,
-    d.walking_distance, d.difficulty, d.reward_value_usd, d.is_mystery, d.kid_friendly, quantity, quantity, terms, isHq ? 'waived' : 'prepaid').first();
+    d.walking_distance, d.difficulty, d.reward_value_usd, d.is_mystery, d.kid_friendly, quantity, quantity, terms, isHq ? 'waived' : 'prepaid', d.icon ?? null).first();
   // Prepaid drops: spend one credit per drop (HQ-created drops are free).
   let balance = null;
   if (!isHq) {
