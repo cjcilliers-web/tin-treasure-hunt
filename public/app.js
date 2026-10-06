@@ -435,7 +435,7 @@ VIEWS.map = async (el) => {
     pts.push([d.lat, d.lng]);
     const pop = `<b>${esc(d.title)}</b><br>${esc(d.merchant)} · ${distTxt(d)}${d.hidden === 'circle' ? '<br>⭐⭐ Somewhere inside this circle' : ''}<br><button data-open="${d.id}">Open</button>`;
     if (d.area) L.circle([d.area.lat, d.area.lng], { radius: d.area.r, color: '#d9a93f', weight: 2, dashArray: '6 6', fillColor: '#d9a93f', fillOpacity: 0.12 }).addTo(leafletMap).bindPopup(pop);
-    L.marker([d.lat, d.lng], { icon: L.divIcon({ className: '', html: `<div class="pinx${d.area ? ' area' : ''}">${d.area ? '❓' : tIco(d)}</div>`, iconSize: [30, 30] }) })
+    L.marker([d.lat, d.lng], { riseOnHover: true, zIndexOffset: d.icon ? 500 : 0, icon: L.divIcon({ className: '', html: `<div class="pinx${d.area ? ' area' : ''}${d.icon && !d.area ? ' pic' : ''}">${d.area ? '❓' : tIco(d)}</div>`, iconSize: [30, 30] }) })
       .addTo(leafletMap)
       .bindPopup(pop);
   });
@@ -969,13 +969,35 @@ function proof(c) {
 }
 
 // Icon picture: square-ish, max 160 px, keeps transparency (PNG), WebP if PNG is large.
+// If a picture sits on a plain white (or near-white) background, make that background
+// see-through, so the icon looks like an emoji. Only white connected to the edges is removed.
+function clearWhiteBackground(g, w, h) {
+  try {
+    const im = g.getImageData(0, 0, w, h), px = im.data;
+    const white = (i) => px[i + 3] > 0 && px[i] > 232 && px[i + 1] > 232 && px[i + 2] > 232;
+    const corners = [0, (w - 1) * 4, (h - 1) * w * 4, ((h - 1) * w + w - 1) * 4];
+    if (corners.filter(white).length < 3) return; // no plain white background
+    const seen = new Uint8Array(w * h), stack = [];
+    for (let x = 0; x < w; x++) stack.push(x, (h - 1) * w + x);
+    for (let y = 0; y < h; y++) stack.push(y * w, y * w + w - 1);
+    while (stack.length) {
+      const p = stack.pop(); if (seen[p]) continue; seen[p] = 1;
+      if (!white(p * 4)) continue;
+      px[p * 4 + 3] = 0;
+      const x = p % w, y = (p / w) | 0;
+      if (x > 0) stack.push(p - 1); if (x < w - 1) stack.push(p + 1); if (y > 0) stack.push(p - w); if (y < h - 1) stack.push(p + w);
+    }
+    g.putImageData(im, 0, 0);
+  } catch {}
+}
 function iconShrink(file) {
   return new Promise((res, rej) => {
     const img = new Image(); const u = URL.createObjectURL(file);
     img.onload = () => {
       const s = Math.min(1, 160 / Math.max(img.width, img.height)); const c = document.createElement('canvas');
       c.width = Math.max(1, Math.round(img.width * s)); c.height = Math.max(1, Math.round(img.height * s));
-      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(u);
+      const g = c.getContext('2d'); g.drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(u);
+      clearWhiteBackground(g, c.width, c.height);
       let out = c.toDataURL('image/png'); if (out.length > 100_000) out = c.toDataURL('image/webp', 0.85);
       res(out);
     };
