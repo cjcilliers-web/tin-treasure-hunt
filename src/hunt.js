@@ -32,6 +32,35 @@ export function shapeDrop(r, here, { revealMystery = false } = {}) {
   };
 }
 
+// ---------- difficulty ----------
+// Easy: exact pin. Medium: only a search circle. Hard: secret spot, hot/cold hints only.
+// Harder finds pay more credits. Owners, HQ and explorers who already claimed see the exact spot.
+export const DIFF_MULT = { Easy: 1, Medium: 2, Hard: 3 };
+const SEARCH_R = 150;
+export function warmth(m, claimRadius = 10) {
+  if (m == null) return null;
+  return m <= Math.max(claimRadius, 10) ? 'here' : m <= 100 ? 'hot' : m <= 300 ? 'warm' : m <= 800 ? 'cool' : 'cold';
+}
+export function publicDrop(d, { exact = false, claimRadius = 10, live = true } = {}) {
+  d.mult = DIFF_MULT[d.difficulty] || 1;
+  const mode = exact ? null : { Medium: 'circle', Hard: 'secret' }[d.difficulty];
+  if (!mode) return d;
+  const m = d.distanceM;
+  d.hidden = mode;
+  d.hint = live ? warmth(m, claimRadius) : null;
+  d.fromBusinessM = null;
+  if (mode === 'circle') {
+    // Circle centre moved a fixed, random-looking amount from the spot, always keeping the spot inside.
+    const a = ((d.id * 137.508) % 360) * Math.PI / 180, off = SEARCH_R * (0.25 + ((d.id * 7919) % 50) / 100);
+    const lat = d.lat + (off * Math.cos(a)) / 111_320, lng = d.lng + (off * Math.sin(a)) / (111_320 * Math.max(Math.cos((d.lat * Math.PI) / 180), 0.01));
+    d.lat = lat; d.lng = lng; d.area = { lat, lng, r: SEARCH_R };
+    if (m != null) { d.distanceM = Math.max(100, Math.round(m / 100) * 100); d.walkMin = walkMin(d.distanceM); }
+  } else {
+    d.lat = null; d.lng = null; d.distanceM = null; d.walkMin = null;
+  }
+  return d;
+}
+
 // Live drops near a point, anywhere on earth. A merchant can drop a treasure at any GPS spot
 // (a ferry terminal, a corner of 5th Avenue), so we search by distance, not by destination.
 // The destination argument is kept for callers but no longer limits the results.
@@ -87,7 +116,8 @@ export async function listDrops(req, env, user) {
     const { results } = await env.DB.prepare(`SELECT drop_id, status FROM claims WHERE user_id = ? AND status IN ('claimed','redeemed')`).bind(user.id).all();
     mine = Object.fromEntries(results.map((r) => [r.drop_id, r.status]));
   }
-  drops.forEach((d) => { d.myStatus = mine[d.id] || null; });
+  const cr = (await getSettings(env.DB)).claimRadius;
+  drops.forEach((d) => { d.myStatus = mine[d.id] || null; publicDrop(d, { exact: !!mine[d.id], claimRadius: cr, live: url.searchParams.has('lat') }); });
   return json({ here, radius, counts, drops });
 }
 
@@ -103,7 +133,10 @@ export async function getDrop(req, env, user, id) {
     `SELECT c.code, c.status, c.expires_at, x.id AS redemption_id, x.credits_awarded, rr.id AS rating_id
        FROM claims c LEFT JOIN redemptions x ON x.claim_id = c.id LEFT JOIN redemption_ratings rr ON rr.redemption_id = x.id
       WHERE c.user_id = ? AND c.drop_id = ? AND c.status IN ('claimed','redeemed')`).bind(user.id, id).first();
-  const drop = shapeDrop(r, readHere(url, dest), { revealMystery: !!claim || isOwner });
+  const here = readHere(url, dest);
+  const drop = publicDrop(shapeDrop(r, here, { revealMystery: !!claim || isOwner }), { exact: !!claim || !!isOwner, claimRadius: (await getSettings(env.DB)).claimRadius, live: url.searchParams.has('lat') });
+  // Hidden treasures: only the server knows the spot, so it tells the explorer when they are close enough.
+  if (drop.hidden) drop.canClaim = url.searchParams.has('lat') && drop.hint === 'here';
   return json({ drop, claim });
 }
 
@@ -418,7 +451,7 @@ export async function confirmRedemption(req, env, user) {
   if (proof.length < 800) bad('The signature looks empty. Please ask the traveler to sign.');
 
   const c = await env.DB.prepare(
-    `SELECT c.id, c.user_id, c.drop_id, d.merchant_id FROM claims c JOIN treasure_drops d ON d.id = c.drop_id
+    `SELECT c.id, c.user_id, c.drop_id, d.merchant_id, d.difficulty FROM claims c JOIN treasure_drops d ON d.id = c.drop_id
       WHERE c.code = ? AND c.status = 'claimed' AND c.expires_at > ?`).bind(code, nowIso()).first();
   if (!c) bad('This code is not valid any more', 410);
   if (c.merchant_id !== mid) bad('This code is for a different merchant', 403);
@@ -428,7 +461,7 @@ export async function confirmRedemption(req, env, user) {
   if (!flipped) bad('This code was just redeemed', 409);
 
   const s = await getSettings(env.DB);
-  const credits = s.creditsPerFind;
+  const credits = s.creditsPerFind * (DIFF_MULT[c.difficulty] || 1);
   const p = await env.DB.prepare('INSERT INTO redemption_proofs(kind, data_url) VALUES (?, ?) RETURNING id').bind(type, proof).first();
   const now = nowIso();
   const [red] = await env.DB.batch([

@@ -31,6 +31,11 @@ const ico = (n) => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICON[n]}</svg>
 const CATS = ['Food', 'Drink', 'Dessert', 'Adventure', 'Shopping', 'Services', 'Transportation', 'Mystery'];
 const CAT_EMO = { Food: '🍔', Drink: '🍺', Dessert: '🍦', Adventure: '🧭', Shopping: '🛍️', Services: '💈', Transportation: '🚕', Mystery: '🎁' };
 // A treasure's icon: its own picture if the merchant added one, else the emoji.
+// Difficulty: Easy = exact pin, Medium = search circle, Hard = secret spot with hot/cold hints. Harder pays more.
+const DIFF = { Easy: ['⭐', 'Exact spot on the map'], Medium: ['⭐⭐', 'Search circle only'], Hard: ['⭐⭐⭐', 'Secret spot · follow the clues'] };
+const HINT = { here: ['🎯', 'Here!', "You're right here! Claim it!"], hot: ['🔥', 'Hot', "Hot! You're very close."], warm: ['🌡️', 'Warm', "Warm, you're getting close."], cool: ['🌤️', 'Cool', 'Cool, keep going.'], cold: ['❄️', 'Cold', 'Cold, it is still far away.'] };
+const diffBadge = (d) => `<span class="diff diff-${String(d.difficulty || 'Easy').toLowerCase()}">${(DIFF[d.difficulty] || DIFF.Easy)[0]} ${esc(d.difficulty || 'Easy')}${(d.mult || 1) > 1 ? ` · ${d.mult}× credits` : ''}</span>`;
+const distTxt = (d) => (d.hidden === 'secret' || d.secret ? (d.hint ? `${HINT[d.hint][0]} ${HINT[d.hint][1]}` : '🔒 Secret') : d.hidden === 'circle' ? `~${fmtD(d.distanceM)}` : fmtD(d.distanceM));
 const tIco = (x) => (x && x.icon ? `<img class="dico" src="${esc(x.icon)}" alt="">` : esc(x?.emoji || '🎁'));
 const RADII = [100, 1000, 5000, 10000, 50000]; // last stop = everything
 const usdc = (c) => `$${(Number(c || 0) / 100).toFixed(2)}`; // cents → $0.00
@@ -384,7 +389,7 @@ async function loadTip(el) {
     box.hidden = false;
     box.innerHTML = `<div style="display:flex;gap:10px;align-items:flex-start"><span class="parrot" style="width:32px;height:32px;font-size:1rem;flex:none">🦜</span><div style="display:grid;gap:8px;min-width:0">
       <span>${esc(tip.text)}</span>
-      ${tip.drops?.length ? `<div class="mini" style="display:grid;gap:6px">${tip.drops.map((d) => `<button class="chip" style="text-align:left" data-td="${d.id}">${tIco(d)} ${esc(d.title)} · ${fmtD(d.distanceM)}</button>`).join('')}</div>` : ''}
+      ${tip.drops?.length ? `<div class="mini" style="display:grid;gap:6px">${tip.drops.map((d) => `<button class="chip" style="text-align:left" data-td="${d.id}">${tIco(d)} ${esc(d.title)} · ${distTxt(d)}</button>`).join('')}</div>` : ''}
       ${tip.action === 'qr' ? `<button class="sbtn gold" data-tq="${tip.dropId}" style="justify-self:start">${esc(PL().showCode)}</button>` : ''}
       ${tip.ask ? `<button class="sbtn" data-ta style="justify-self:start">${esc(PL().yes)}</button>` : ''}</div></div>`;
     $$('[data-td]', box).forEach((b) => (b.onclick = () => go('detail', Number(b.dataset.td))));
@@ -399,8 +404,8 @@ function dropCard(d) {
   const st = d.myStatus === 'redeemed' ? 'Found ✓' : d.myStatus === 'claimed' ? 'Claimed' : `${d.remaining} left`;
   return `<button class="drop ${d.myStatus === 'redeemed' ? 'done' : ''}" data-d="${d.id}"><span class="chest">${tIco(d)}</span>
     <span><div class="n">${esc(d.title)}</div><div class="m">${d.mystery ? 'Mystery reward' : esc(d.item)} · ${esc(d.merchant)}</div>
-    <div class="m">${esc(d.difficulty)} · ${d.rating ? `★ ${Number(d.rating).toFixed(1)}` : 'New'}</div></span>
-    <span class="d">${fmtD(d.distanceM)}<small>${st}</small></span></button>`;
+    <div class="m">${diffBadge(d)} · ${d.rating ? `★ ${Number(d.rating).toFixed(1)}` : 'New'}</div></span>
+    <span class="d">${distTxt(d)}<small>${st}</small></span></button>`;
 }
 
 // Light street map (streets, ferry terminals, shops, landmarks) with a Satellite option
@@ -417,7 +422,7 @@ let leafletMap = null;
 VIEWS.map = async (el) => {
   const data = await api(`/api/drops?destination=${S.dest.id}&radius=50000${hereQs()}`);
   el.innerHTML = `<div class="lmap" id="lmap" role="region" aria-label="Map of treasures"></div>
-    <p class="legend">Gold pins are live treasures. Tap one for details. ${S.locSource === 'gps' ? 'The teal dot is you.' : 'Turn on location to see yourself on the map.'}</p>`;
+    <p class="legend">Gold pins are live treasures. ⭐⭐ Medium treasures show a search circle. ${data.drops.some((d) => d.hidden === 'secret') ? `⭐⭐⭐ ${data.drops.filter((d) => d.hidden === 'secret').length} secret treasure(s) are not on the map: find them on the Hunt list and follow the hot/cold hints. ` : ''}Tap one for details. ${S.locSource === 'gps' ? 'The teal dot is you.' : 'Turn on location to see yourself on the map.'}</p>`;
   if (!window.L) { $('#lmap').innerHTML = '<p class="empty">Map is loading, try again in a moment.</p>'; return; }
   if (leafletMap) { leafletMap.remove(); leafletMap = null; }
   leafletMap = L.map('lmap', { zoomControl: true }).setView([S.here.lat, S.here.lng], 14);
@@ -426,10 +431,13 @@ VIEWS.map = async (el) => {
   if (S.locSource === 'gps') L.marker([S.here.lat, S.here.lng], { icon: L.divIcon({ className: '', html: '<div class="pinx me"></div>', iconSize: [16, 16] }) }).addTo(leafletMap);
   const pts = [];
   data.drops.forEach((d) => {
+    if (d.hidden === 'secret' || !Number.isFinite(d.lat)) return; // Hard: secret spot, never on the map
     pts.push([d.lat, d.lng]);
-    L.marker([d.lat, d.lng], { icon: L.divIcon({ className: '', html: `<div class="pinx">${tIco(d)}</div>`, iconSize: [30, 30] }) })
+    const pop = `<b>${esc(d.title)}</b><br>${esc(d.merchant)} · ${distTxt(d)}${d.hidden === 'circle' ? '<br>⭐⭐ Somewhere inside this circle' : ''}<br><button data-open="${d.id}">Open</button>`;
+    if (d.area) L.circle([d.area.lat, d.area.lng], { radius: d.area.r, color: '#d9a93f', weight: 2, dashArray: '6 6', fillColor: '#d9a93f', fillOpacity: 0.12 }).addTo(leafletMap).bindPopup(pop);
+    L.marker([d.lat, d.lng], { icon: L.divIcon({ className: '', html: `<div class="pinx${d.area ? ' area' : ''}">${d.area ? '❓' : tIco(d)}</div>`, iconSize: [30, 30] }) })
       .addTo(leafletMap)
-      .bindPopup(`<b>${esc(d.title)}</b><br>${esc(d.merchant)} · ${fmtD(d.distanceM)}<br><button data-open="${d.id}">Open</button>`);
+      .bindPopup(pop);
   });
   leafletMap.on('popupopen', (e) => { const b = e.popup.getElement().querySelector('[data-open]'); if (b) b.onclick = () => go('detail', Number(b.dataset.open)); });
   if (pts.length && S.locSource !== 'gps') leafletMap.fitBounds(pts, { padding: [30, 30], maxZoom: 15 });
@@ -457,13 +465,13 @@ function couponHtml(d, claim, { stub = false } = {}) {
     'One per explorer. Single use.',
     `Claim it while standing at the treasure (within ${limit} m).`,
     `Show the QR or 8-digit code to staff within ${S.settings.claimHours ?? 24} hours of claiming.`,
-    `Earn ${S.settings.creditsPerFind} Treasure Hunt credits when ${d.merchant} confirms.`,
+    `Earn ${S.settings.creditsPerFind * (d.mult || 1)} Treasure Hunt credits when ${d.merchant} confirms${(d.mult || 1) > 1 ? ` (${d.difficulty} pays ${d.mult}×)` : ''}.`,
     ...(d.terms ? [d.terms] : []),
   ];
   return `<article class="coupon" aria-label="Treasure coupon from ${esc(d.merchant)}">
     <header class="cp-head">
       ${d.hasLogo ? `<img class="cp-logo" src="/api/merchants/${d.merchantId}/logo" alt="${esc(d.merchant)} logo">` : `<span class="cp-logo cp-mono" aria-hidden="true">${esc(initials(d.merchant))}</span>`}
-      <div class="cp-who"><b>${esc(d.merchant)}</b><small>${esc(d.category)} · ${fmtD(d.distanceM)} away</small></div>
+      <div class="cp-who"><b>${esc(d.merchant)}</b><small>${esc(d.category)} · ${d.hidden === 'secret' ? 'secret spot' : `${distTxt(d)} away`}</small></div>
       <span class="cp-status s-${sk}">${sl}</span>
     </header>
     <div class="cp-gallery" data-n="${n || 1}">
@@ -474,7 +482,7 @@ function couponHtml(d, claim, { stub = false } = {}) {
     <div class="cp-body">
       <div class="cp-title">${tIco(d)} ${esc(d.title)}</div>
       <div class="cp-reward">${d.item ? esc(d.item) : '🎁 Mystery reward, revealed when you claim'}</div>
-      <div class="cp-value">${d.value ? `Value $${Number(d.value).toFixed(0)} · ` : ''}<b>FREE</b> · ${esc(d.difficulty)}</div>
+      <div class="cp-value">${d.value ? `Value $${Number(d.value).toFixed(0)} · ` : ''}<b>FREE</b> · ${diffBadge(d)}</div>
       <p class="clue">${esc(d.story)}</p>
       <details class="cp-terms"><summary>Terms &amp; how to redeem</summary><ul>${terms.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></details>
     </div>
@@ -502,11 +510,12 @@ function drawQr(root, code) {
 
 VIEWS.detail = async (el, id) => {
   const { drop: d, claim } = await api(`/api/drops/${id}?x=1${hereQs()}`);
-  const dirUrl = `https://www.google.com/maps/dir/?api=1&destination=${d.lat},${d.lng}&travelmode=walking`;
+  const dirUrl = Number.isFinite(d.lat) ? `https://www.google.com/maps/dir/?api=1&destination=${d.lat},${d.lng}&travelmode=walking` : null;
   el.innerHTML = `<button class="back" id="bk">← Back to treasures</button>
   ${couponHtml(d, claim)}
+  ${d.hidden ? `<div class="warmth" id="warm">${warmHtml(d)}</div>` : ''}
   <div class="facts">
-    <div class="fact"><div class="k">Walk</div><div class="v">${fmtD(d.distanceM)} · ${d.walkMin} min</div></div>
+    <div class="fact"><div class="k">${d.hidden === 'secret' ? 'Hint' : 'Walk'}</div><div class="v" id="walkv">${d.hidden === 'secret' ? distTxt(d) : `${distTxt(d)} · ${d.walkMin ?? '?'} min`}</div></div>
     <div class="fact"><div class="k">Rating</div><div class="v">${d.rating ? `★ ${Number(d.rating).toFixed(1)} (${d.ratingCount})` : 'New'}</div></div>
     <div class="fact"><div class="k">Hours</div><div class="v">${esc(d.hours || '—')}</div></div>
     <div class="fact"><div class="k">Left</div><div class="v">${d.remaining}</div></div>
@@ -515,7 +524,7 @@ VIEWS.detail = async (el, id) => {
   ${claim?.status === 'redeemed' ? `<p class="empty">You found this treasure ✓</p>` :
     claim ? `<button class="btn" id="showqr">Show my coupon code</button>` :
     `<div class="gate" id="gate"></div><button class="btn" id="claim">Claim this treasure</button>`}
-  <a class="btn ghost" href="${dirUrl}" target="_blank" rel="noopener">Walking directions</a>`;
+  ${d.hidden === 'secret' ? '' : `<a class="btn ghost" href="${dirUrl}" target="_blank" rel="noopener">${d.hidden === 'circle' ? 'Directions to the search circle' : 'Walking directions'}</a>`}`;
   wireGallery(el);
   $('#bk', el).onclick = () => go('hunt');
   const c = $('#claim', el);
@@ -532,12 +541,34 @@ VIEWS.detail = async (el, id) => {
   const q = $('#showqr', el); if (q) q.onclick = () => go('qr', d.id);
 };
 
+function warmHtml(d) {
+  const h = HINT[d.hint];
+  const lead = d.hidden === 'secret' ? '⭐⭐⭐ Hard: this treasure is a secret spot. Read the story, then walk around.' : '⭐⭐ Medium: the treasure is somewhere inside the search circle.';
+  return `<span class="parrot">🦜</span><div><b>${h ? `${h[0]} ${esc(h[2])}` : S.locSource === 'gps' ? 'Polly is listening for your steps…' : '📍 Turn on location and Polly will tell you hot or cold.'}</b><small>${lead} Earn ${S.settings.creditsPerFind * (d.mult || 1)} credits (${d.mult}×).</small></div>`;
+}
+
 // Explorers can browse from anywhere, but can only claim when standing at the treasure.
 function claimGate(d, btn) {
   const gate = $('#gate'); if (!gate || !btn.isConnected) return false;
   const limit = S.settings.claimRadius ?? 10;
   if (S.locSource !== 'gps') {
     gate.innerHTML = `📍 Turn on location to claim. You must be within <b>${limit} m</b> of the treasure.`;
+    btn.disabled = true; return false;
+  }
+  if (d.hidden) {
+    // Only the server knows a hidden spot: ask it every few seconds how warm we are.
+    if (!S.warmT || Date.now() - S.warmT > 4000) {
+      S.warmT = Date.now();
+      api(`/api/drops/${d.id}?x=1${hereQs()}`).then((r) => {
+        if (!btn.isConnected) return;
+        d.hint = r.drop.hint; d.canClaim = r.drop.canClaim;
+        const w = $('#warm'); if (w) w.innerHTML = warmHtml(d);
+        const v = $('#walkv'); if (v && d.hidden === 'secret') v.textContent = distTxt(d);
+        claimGate(d, btn);
+      }).catch(() => {});
+    }
+    if (d.canClaim) { gate.innerHTML = `✅ You found it! Claim it before another explorer does.`; btn.disabled = false; return true; }
+    gate.innerHTML = `🦜 ${esc(HINT[d.hint]?.[2] || 'Keep exploring.')} Get within <b>${limit} m</b> of the secret spot to claim it.`;
     btn.disabled = true; return false;
   }
   const away = Math.round(haversine(S.here, { lat: d.lat, lng: d.lng }));
@@ -789,7 +820,7 @@ function pickVoice(tag) {
 function pollySpeak(text, drops, lang) {
   if (!V.speak || !window.speechSynthesis) { afterSpeak(); return; }
   const tag = (POLLY_LANGS.find((l) => l[0] === lang) || POLLY_LANGS[0])[3];
-  const list = (drops || []).slice(0, 3).map((d, i) => `${d.n || i + 1}. ${d.title}, ${fmtD(d.distanceM)}`).join('. ');
+  const list = (drops || []).slice(0, 3).map((d, i) => `${d.n || i + 1}. ${d.title}${d.secret ? '' : `, ${fmtD(d.distanceM)}`}`).join('. ');
   const U = { en: ['meters', 'kilometers'], es: ['metros', 'kilómetros'], pt: ['metros', 'quilômetros'], fr: ['mètres', 'kilomètres'], de: ['Meter', 'Kilometer'] }[lang] || ['meters', 'kilometers'];
   const say = `${text} ${list}`.replace(/(\d)\s?km\b/g, `$1 ${U[1]}`).replace(/(\d)\s?m\b/g, `$1 ${U[0]}`).replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, '').replace(/\s+/g, ' ').trim();
   if (!say) { afterSpeak(); return; }
@@ -809,7 +840,7 @@ try { window.speechSynthesis && speechSynthesis.getVoices(); window.speechSynthe
 
 function drawChat() {
   const c = $('#chat'); if (!c) return;
-  c.innerHTML = S.chat.map((m) => `<div class="msg ${m.p ? 'p' : 'u'}">${esc(m.t)}${m.drops?.length ? `<div class="mini">${m.drops.map((d) => `<button data-d="${d.id}">${d.n ? `<b>${d.n}.</b> ` : ''}${tIco(d)} ${esc(d.title)} · ${fmtD(d.distanceM)}</button>`).join('')}</div>` : ''}</div>`).join('');
+  c.innerHTML = S.chat.map((m) => `<div class="msg ${m.p ? 'p' : 'u'}">${esc(m.t)}${m.drops?.length ? `<div class="mini">${m.drops.map((d) => `<button data-d="${d.id}">${d.n ? `<b>${d.n}.</b> ` : ''}${tIco(d)} ${esc(d.title)} · ${d.secret ? '🔒 secret spot' : fmtD(d.distanceM)}</button>`).join('')}</div>` : ''}</div>`).join('');
   $$('[data-d]', c).forEach((b) => (b.onclick = () => { voiceStop(); go('detail', Number(b.dataset.d)); }));
   const scr = $('#screen'); scr.scrollTop = scr.scrollHeight;
 }
@@ -1148,8 +1179,9 @@ function dropForm(el, d) {
         <span><b>Or use your own picture</b><br><span class="note">Drag it here, paste it (Ctrl+V), or</span> <label class="sbtn" style="cursor:pointer;display:inline-block;padding:4px 10px">Browse…<input type="file" accept="image/*" hidden id="icFile"></label>
         <button type="button" class="sbtn" id="icRm" ${d?.icon ? '' : 'hidden'} style="padding:4px 10px">Remove picture</button></span>
       </div></div>
-    <div class="two"><label>Difficulty<select id="df">${['Easy', 'Medium', 'Hard'].map((x) => `<option ${d?.difficulty === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
+    <div class="two"><label>Difficulty<select id="df">${['Easy', 'Medium', 'Hard'].map((x) => `<option value="${x}" ${d?.difficulty === x ? 'selected' : ''}>${DIFF[x][0]} ${x}</option>`).join('')}</select></label>
       <label>Retail value (USD)<input id="vl" type="number" min="0" step="0.5" value="${d?.value ?? 5}"></label></div>
+    <div class="diffhelp"><b>How difficulty works</b><span>⭐ <b>Easy</b>: exact pin on the map · explorers earn 1× credits</span><span>⭐⭐ <b>Medium</b>: only a search circle on the map · 2× credits</span><span>⭐⭐⭐ <b>Hard</b>: secret spot, not on the map. Explorers follow your story and Polly's hot/cold hints · 3× credits</span></div>
     ${edit ? '' : `<label>How many drops<input id="qt" type="number" min="1" max="1000" value="10" required></label>`}
     <label>Walking distance note<input id="wd" maxlength="120" placeholder="e.g. 5 min walk from the ferry pier" value="${esc(d?.walkingNote || '')}"></label>
     <div class="two"><label style="flex-direction:row;display:flex;gap:6px;align-items:center"><input type="checkbox" id="kd" style="width:auto" ${d?.kids === false ? '' : 'checked'}> Kid-friendly</label>
