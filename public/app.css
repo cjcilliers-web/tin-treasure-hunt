@@ -393,3 +393,26 @@ video.scan{width:100%;border-radius:12px;background:#000;aspect-ratio:1;object-f
   100%{background:#d9a93f;box-shadow:0 0 6px 2px rgba(217,169,63,.9),0 0 16px 4px rgba(217,169,63,.5)}}
 @keyframes mapText{0%,100%{color:#f2c45a}25%{color:#5fe0d0}50%{color:#ff7ab8}75%{color:#a993ff}}
 @media (prefers-reduced-motion:reduce){.nav .nav-map svg{animation:none;background:#d9a93f;box-shadow:0 0 10px rgba(217,169,63,.8)}.nav .nav-map{animation:none;color:#f2c45a}}
+
+/* Bigger, easy-to-read category buttons */
+.bigchips{gap:8px;min-height:52px;padding:2px 0 6px}
+.bigchips .chip{font-size:1rem;font-weight:700;padding:11px 16px;color:#e4efec;border-width:2px}
+.bigchips .chip[aria-pressed="true"]{background:rgba(217,169,63,.2);border-color:var(--gold);color:var(--gold-hi)}
+
+/* LIVE / town switch */
+.locsw{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.locsw button{display:flex;align-items:center;gap:10px;padding:12px;border-radius:16px;border:2px solid var(--line);background:var(--panel);color:var(--muted);cursor:pointer;text-align:left}
+.locsw button b{display:block;font-size:1.05rem;color:#e4efec}
+.locsw button small{display:block;font-size:.78rem}
+.locsw button.on[data-ls="live"]{border-color:#2fd27a;background:rgba(47,210,122,.14);box-shadow:0 0 14px rgba(47,210,122,.35)}
+.locsw button.on[data-ls="live"] b{color:#4ff09a}
+.locsw button.on[data-ls="town"]{border-color:var(--gold);background:rgba(217,169,63,.16);box-shadow:0 0 14px rgba(217,169,63,.3)}
+.locsw button.on[data-ls="town"] b{color:var(--gold-hi)}
+.livedot{width:16px;height:16px;border-radius:50%;background:#58706b;flex:none}
+.locsw button.on .livedot{background:#2fd27a;animation:livepulse 1.4s infinite}
+.townico{font-size:1.5rem;line-height:1}
+@keyframes livepulse{0%{box-shadow:0 0 0 0 rgba(47,210,122,.7)}70%{box-shadow:0 0 0 12px rgba(47,210,122,0)}100%{box-shadow:0 0 0 0 rgba(47,210,122,0)}}
+/* Header location line: LIVE badge when following you */
+.loc{font-size:.95rem;font-weight:600;color:#cfe0dc}
+.loc.live .dot{background:#2fd27a;animation:livepulse 1.4s infinite}
+.loc.live #locTxt::before{content:"LIVE";background:#2fd27a;color:#05210f;font-weight:800;font-size:.72rem;padding:2px 7px;border-radius:6px;margin-right:7px;letter-spacing:.05em}

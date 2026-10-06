@@ -78,12 +78,29 @@ function browseTown(on) {
   else if (S.gps) { S.here = S.gps; S.locSource = 'gps'; setLoc(haversine(S.gps, { lat: S.dest.lat, lng: S.dest.lng }) > 40000 ? 'Your location' : `Your location · ${S.dest.name}`); }
   render();
 }
+// Big LIVE / town switch: LIVE = treasures around where you are now; town = browse the destination.
+const isLive = () => !S.browseTown && S.locSource === 'gps';
+function locSwitch() {
+  const live = isLive();
+  return `<div class="locsw" role="group" aria-label="Where to search">
+    <button type="button" data-ls="live" class="${live ? 'on' : ''}" aria-pressed="${live}"><span class="livedot"></span><span><b>LIVE</b><small>Near me now</small></span></button>
+    <button type="button" data-ls="town" class="${live ? '' : 'on'}" aria-pressed="${!live}"><span class="townico">🏝️</span><span><b>${esc(S.dest.name)}</b><small>Whole town</small></span></button></div>`;
+}
+function wireLocSwitch(el) {
+  $$('[data-ls]', el).forEach((b) => (b.onclick = () => {
+    if (b.dataset.ls === 'town') { if (!S.browseTown || isLive()) browseTown(true); return; }
+    if (S.gps) { browseTown(false); return; }
+    toast('Finding you… please allow location');
+    if (navigator.geolocation) navigator.geolocation.getCurrentPosition((p) => { S.gps = { lat: p.coords.latitude, lng: p.coords.longitude }; browseTown(false); },
+      () => toast('Location is off. Turn it on in your phone settings to go LIVE.'), { enableHighAccuracy: true, timeout: 15000 });
+  }));
+}
 function haversine(a, b) {
   const R = 6371e3, t = Math.PI / 180;
   const x = Math.sin((b.lat - a.lat) * t / 2) ** 2 + Math.cos(a.lat * t) * Math.cos(b.lat * t) * Math.sin((b.lng - a.lng) * t / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(x));
 }
-const setLoc = (t) => { $('#locTxt').textContent = t; };
+const setLoc = (t) => { $('#locTxt').textContent = t; const l = $('.loc'); if (l) l.classList.toggle('live', S.mode === 'traveler' && isLive()); };
 // GPS updates only label the explorer view; in Merchant mode the bar keeps "Merchant · <business name>".
 const setGpsLoc = (t) => { if (S.mode === 'traveler') setLoc(t); };
 const hereQs = () => (S.locSource === 'gps' ? `&lat=${S.here.lat}&lng=${S.here.lng}` : '');
@@ -229,11 +246,11 @@ VIEWS.hunt = async (el) => {
   <button class="askp" id="askp">🦜 ${esc(PL().ask)}</button>
   <div class="slider"><div class="lbl"><span>Search distance</span><b id="rv">${radLabel(S.radiusIdx)}</b></div>
     <input type="range" id="rad" min="0" max="${RADII.length - 1}" step="1" value="${S.radiusIdx}" aria-label="Search distance"></div>
-  <div class="chips">${['All', ...CATS].map((c) => `<button class="chip" data-c="${c}" aria-pressed="${S.cat === c}">${c}</button>`).join('')}</div>
-  ${S.browseTown ? `<button class="sbtn" id="mine" style="justify-self:start">📍 Back to treasures near me</button>` : ''}
+  ${locSwitch()}
+  <div class="chips bigchips">${['All', ...CATS].map((c) => `<button class="chip" data-c="${c}" aria-pressed="${S.cat === c}">${c === 'All' ? '🗺️' : CAT_EMO[c]} ${c}</button>`).join('')}</div>
   ${data.drops.length ? data.drops.map(dropCard).join('') : `<p class="empty">No treasures within ${radLabel(S.radiusIdx)}. Slide the distance wider or ask Polly.</p>${!S.browseTown && S.gps && haversine(S.gps, { lat: S.dest.lat, lng: S.dest.lng }) > 40000 ? `<button class="btn" id="town">🗺️ Explore ${esc(S.dest.name)}'s treasures instead</button>` : ''}`}`;
   const tw = $('#town', el); if (tw) tw.onclick = () => browseTown(true);
-  const mn = $('#mine', el); if (mn) mn.onclick = () => browseTown(false);
+  wireLocSwitch(el);
   $('#rad', el).oninput = (e) => { $('#rv').textContent = radLabel(Number(e.target.value)); };
   $('#rad', el).onchange = (e) => { S.radiusIdx = Number(e.target.value); saveUi(); render(); };
   $$('[data-c]', el).forEach((b) => (b.onclick = () => { S.cat = S.cat === b.dataset.c && b.classList.contains('tt') ? 'All' : b.dataset.c; render(); }));
