@@ -98,7 +98,7 @@ export async function getDestination(req, env, id) {
   const d = await destinationOr404(env, id);
   const hunt = await env.DB.prepare(`SELECT id, name, emoji, tagline, starts_on, ends_on FROM hunts WHERE destination_id = ? AND status = 'live' ORDER BY id LIMIT 1`).bind(d.id).first();
   const s = await getSettings(env.DB);
-  return json({ destination: { id: d.id, name: d.name, country: d.country, lat: d.center_lat, lng: d.center_lng, status: d.status }, hunt, settings: { creditsPerFind: s.creditsPerFind, rafflePrize: s.rafflePrize, claimRadius: s.claimRadius, claimHours: s.claimHours }, nextRaffleAt: iso(nextRaffleAt()) });
+  return json({ destination: { id: d.id, name: d.name, country: d.country, lat: d.center_lat, lng: d.center_lng, status: d.status }, hunt, settings: { creditsPerFind: s.creditsPerFind, rafflePrize: s.rafflePrize, claimRadius: s.claimRadius, claimHours: s.claimHours, treasureIcons: s.treasureIcons }, nextRaffleAt: iso(nextRaffleAt()) });
 }
 
 export async function listDrops(req, env, user) {
@@ -667,7 +667,7 @@ export async function adminUpdateHunt(req, env, user, id) {
 export async function adminSettings(req, env, user) {
   requireRole(user, 'admin');
   if (req.method === 'PUT') {
-    const b = await body(req, 5_000);
+    const b = await body(req, 30_000);
     const map = {
       creditsPerFind: ['credits_per_find', { min: 1, max: 1000, int: true }],
       rafflePrize: ['raffle_prize_credits', { min: 0, max: 100000, int: true }],
@@ -687,6 +687,15 @@ export async function adminSettings(req, env, user) {
       if (!Array.isArray(b.dropPacks)) bad('Packs must be a list');
       const packs = parsePacks(JSON.stringify(b.dropPacks));
       stmts.push(env.DB.prepare('INSERT INTO settings(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').bind('drop_packs', JSON.stringify(packs)));
+    }
+    if (b.treasureIcons !== undefined) {
+      if (!Array.isArray(b.treasureIcons) || !b.treasureIcons.length || b.treasureIcons.length > 15) bad('Give 1 to 15 icon groups');
+      const groups = b.treasureIcons.map((g) => ({
+        name: str(g.name || 'Icons', { min: 1, max: 30, name: 'Group name' }),
+        icons: [...new Set((Array.isArray(g.icons) ? g.icons : []).map((x) => String(x).trim()).filter((x) => x && x.length <= 16 && !/[A-Za-z0-9<>"'&]/.test(x)))].slice(0, 80),
+      })).filter((g) => g.icons.length);
+      if (!groups.length) bad('Add at least one icon');
+      stmts.push(env.DB.prepare('INSERT INTO settings(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').bind('treasure_icons', JSON.stringify(groups)));
     }
     if (stmts.length) await env.DB.batch(stmts);
   }
