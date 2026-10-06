@@ -22,6 +22,8 @@ const CAT_WORDS = {
   Dessert: ['dessert', 'sweet', 'ice cream', 'chocolate', 'helado', 'postre', 'dulce', 'sorvete', 'sobremesa', 'glace', 'chocolat', 'eis', 'nachtisch', 'schokolade'],
   Adventure: ['adventure', 'snorkel', 'dive', 'kayak', 'beach', 'scooter', 'tour', 'aventura', 'playa', 'bucear', 'praia', 'mergulho', 'aventure', 'plage', 'plongée', 'abenteuer', 'strand', 'tauchen'],
   Shopping: ['shop', 'shopping', 'souvenir', 'gift', 'jewel', 'compras', 'regalo', 'tienda', 'presente', 'loja', 'boutique', 'cadeau', 'bijou', 'einkaufen', 'geschenk', 'schmuck'],
+  Services: ['service', 'haircut', 'hair', 'barber', 'salon', 'spa', 'massage', 'nails', 'manicure', 'laundry', 'repair', 'servicio', 'corte', 'peluquer', 'barbería', 'masaje', 'uñas', 'lavander', 'serviço', 'cabelo', 'salão', 'coiffeur', 'coiffure', 'ongles', 'friseur', 'haarschnitt', 'nägel', 'wäscherei'],
+  Transportation: ['taxi', 'ride', 'transport', 'shuttle', 'ferry', 'bus', 'bike rental', 'car rental', 'rent a car', 'transfer', 'transporte', 'traslado', 'ferri', 'autobús', 'renta de auto', 'bicicleta', 'carona', 'balsa', 'navette', 'vélo', 'location de voiture', 'fähre', 'fahrrad', 'mietwagen', 'transfer'],
   Mystery: ['mystery', 'surprise', 'secret', 'misterio', 'sorpresa', 'mistério', 'surpresa', 'mystère', 'überraschung', 'geheimnis'],
 };
 
@@ -226,15 +228,15 @@ const T = {
     tipStart: (n) => `In der Nähe sind ${n} Schätze versteckt. Soll ich dir eine einstündige Schatzsuche planen?`,
   },
 };
-const catWord = { en: (c) => `${c.toLowerCase()} treasure`, es: (c) => `tesoro de ${{ Food: 'comida', Drink: 'bebida', Dessert: 'postre', Adventure: 'aventura', Shopping: 'compras', Mystery: 'misterio' }[c]}`,
-  pt: (c) => `tesouro de ${{ Food: 'comida', Drink: 'bebida', Dessert: 'sobremesa', Adventure: 'aventura', Shopping: 'compras', Mystery: 'mistério' }[c]}`,
-  fr: (c) => `trésor ${{ Food: 'gourmand', Drink: 'boisson', Dessert: 'dessert', Adventure: 'aventure', Shopping: 'shopping', Mystery: 'mystère' }[c]}`,
-  de: (c) => `${{ Food: 'Essens', Drink: 'Getränke', Dessert: 'Dessert', Adventure: 'Abenteuer', Shopping: 'Shopping', Mystery: 'Mystery' }[c]}-Schatz` };
+const catWord = { en: (c) => `${c.toLowerCase()} treasure`, es: (c) => `tesoro de ${{ Food: 'comida', Drink: 'bebida', Dessert: 'postre', Adventure: 'aventura', Shopping: 'compras', Services: 'servicios', Transportation: 'transporte', Mystery: 'misterio' }[c]}`,
+  pt: (c) => `tesouro de ${{ Food: 'comida', Drink: 'bebida', Dessert: 'sobremesa', Adventure: 'aventura', Shopping: 'compras', Services: 'serviços', Transportation: 'transporte', Mystery: 'mistério' }[c]}`,
+  fr: (c) => `trésor ${{ Food: 'gourmand', Drink: 'boisson', Dessert: 'dessert', Adventure: 'aventure', Shopping: 'shopping', Services: 'services', Transportation: 'transport', Mystery: 'mystère' }[c]}`,
+  de: (c) => `${{ Food: 'Essens', Drink: 'Getränke', Dessert: 'Dessert', Adventure: 'Abenteuer', Shopping: 'Shopping', Services: 'Service', Transportation: 'Transport', Mystery: 'Mystery' }[c]}-Schatz` };
 const LOCALE = { en: 'en-US', es: 'es-MX', pt: 'pt-BR', fr: 'fr-FR', de: 'de-DE' };
 const fmtDist = (m) => (m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1)} km`);
 
 const mini = (d, i, numbered) => ({
-  id: d.id, n: numbered ? i + 1 : null, emoji: d.emoji, title: d.title, distanceM: d.distanceM, walkMin: d.walkMin, rating: d.rating, category: d.category,
+  id: d.id, n: numbered ? i + 1 : null, emoji: d.emoji, icon: d.icon || null, title: d.title, distanceM: d.distanceM, walkMin: d.walkMin, rating: d.rating, category: d.category,
 });
 
 async function context(env, user, destId, b) {

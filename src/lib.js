@@ -95,7 +95,7 @@ export async function getSettings(db) {
   };
 }
 
-export const CATEGORIES = ['Food', 'Drink', 'Dessert', 'Adventure', 'Shopping', 'Mystery'];
+export const CATEGORIES = ['Food', 'Drink', 'Dessert', 'Adventure', 'Shopping', 'Services', 'Transportation', 'Mystery'];
 export const DIFFICULTIES = ['Easy', 'Medium', 'Hard'];
 
 // Next Sunday 14:00 UTC strictly after `from`.

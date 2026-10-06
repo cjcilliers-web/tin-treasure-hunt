@@ -368,3 +368,12 @@ video.scan{width:100%;border-radius:12px;background:#000;aspect-ratio:1;object-f
 .onoff .off-btn.cur{background:#c0392b;border-color:#c0392b;color:#fff;cursor:default}
 .onoff .oo:not(.cur):hover{border-color:var(--gold-hi,#e8c25a)}
 .onoff .oo-note{font-weight:700;opacity:.85}
+
+/* Own icon pictures for treasures */
+.dico{width:1.15em;height:1.15em;object-fit:contain;vertical-align:-.2em;display:inline-block}
+.pinx .dico{width:22px;height:22px;vertical-align:middle}
+.icon-drop{display:flex;gap:12px;align-items:center;border:2px dashed var(--line);border-radius:14px;padding:12px;background:var(--panel);outline:none}
+.icon-drop:focus,.icon-drop.drag{border-color:var(--gold);background:rgba(217,169,63,.12)}
+.icon-drop.on{border-style:solid;border-color:var(--sea)}
+.icon-drop-art{width:64px;height:64px;flex:none;display:grid;place-items:center;font-size:2rem;border-radius:12px;background:#0e1c1b}
+.icon-drop-art img{width:56px;height:56px;object-fit:contain}
