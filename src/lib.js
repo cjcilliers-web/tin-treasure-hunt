@@ -78,15 +78,15 @@ export function parsePacks(raw) {
 
 // Icons merchants can pick for a treasure, in groups. TIN HQ can edit them (setting 'treasure_icons').
 export const DEFAULT_ICONS = [
-  { name: 'Food', icons: ['🍔', '🌮', '🌯', '🍕', '🦞', '🦐', '🍣', '🥗', '🍝', '🥩', '🍗', '🥐', '🥞', '🍳', '🥪'] },
-  { name: 'Sweets', icons: ['🍦', '🍨', '🍰', '🧁', '🍩', '🍪', '🍫', '🍬'] },
-  { name: 'Drinks', icons: ['☕', '🧋', '🥤', '🧃', '🥥', '🍹', '🍺', '🍻', '🍷', '🍾', '🥂', '🍸', '🥃'] },
-  { name: 'Shopping', icons: ['🛍️', '👗', '👕', '👒', '🧢', '👟', '👜', '🕶️', '💎', '💍', '⌚', '🧴', '🌸', '📱', '🎁'] },
-  { name: 'Services', icons: ['💇', '💈', '✂️', '💅', '💆', '🧖', '🧺', '🧼', '🔧', '🛠️', '💊', '🩺', '🐾', '📷'] },
-  { name: 'Transportation', icons: ['🚕', '🚗', '🚐', '🚌', '🛵', '🏍️', '🚲', '⛴️', '🚤', '🛳️', '✈️', '⛽'] },
-  { name: 'Adventure', icons: ['🤿', '🏄', '🛶', '⛵', '🎣', '🏊', '🧗', '🚴', '🐬', '🏖️', '🏝️', '🌴', '🧭', '🗺️'] },
-  { name: 'Stay & Fun', icons: ['🏨', '🛏️', '🎟️', '🎉', '🎶', '🎤', '🎨', '🎯', '🎲', '🏆', '⭐', '🗝️', '💰', '🏷️'] },
-];
+  { name: 'Food', icons: ['🍔', '🌮', '🍕', '🦞', '🍣'] },
+  { name: 'Sweets', icons: ['🍦', '🍰', '🍩', '🍫', '🧁'] },
+  { name: 'Drinks', icons: ['☕', '🍹', '🍺', '🍷', '🥂'] },
+  { name: 'Shopping', icons: ['🛍️', '👗', '💎', '🕶️', '🎁'] },
+  { name: 'Services', icons: ['💇', '💅', '💆', '🧺', '🔧'] },
+  { name: 'Transportation', icons: ['🚕', '🚗', '🛵', '🚲', '⛴️'] },
+  { name: 'Adventure', icons: ['🤿', '🏄', '⛵', '🎣', '🏝️'] },
+  { name: 'Stay & Fun', icons: ['🏨', '🎟️', '🎉', '🎶', '⭐'] },
+]
 export function parseIcons(raw) {
   try {
     const g = JSON.parse(raw);
