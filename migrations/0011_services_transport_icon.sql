@@ -6,8 +6,13 @@
 PRAGMA defer_foreign_keys = true;
 
 CREATE TABLE _keep_drop_photos AS SELECT * FROM drop_photos;
+CREATE TABLE _old_drops AS SELECT * FROM treasure_drops;
 
-CREATE TABLE treasure_drops_new (
+-- Re-creating the table under the same name and re-inserting the same ids
+-- satisfies every code, redemption and payment that points at a treasure.
+DROP TABLE treasure_drops;
+
+CREATE TABLE treasure_drops (
   id               INTEGER PRIMARY KEY AUTOINCREMENT,
   merchant_id      INTEGER NOT NULL REFERENCES merchants(id),
   destination_id   TEXT NOT NULL REFERENCES destinations(id),
@@ -40,16 +45,13 @@ CREATE TABLE treasure_drops_new (
   icon             TEXT
 );
 
-INSERT INTO treasure_drops_new (id, merchant_id, destination_id, title, item, category, emoji, story_text, gps_lat, gps_lng,
+INSERT INTO treasure_drops (id, merchant_id, destination_id, title, item, category, emoji, story_text, gps_lat, gps_lng,
   walking_distance, difficulty, reward_value_usd, is_mystery, kid_friendly, quantity, remaining, fee_usd, photo, status, hunt_id,
   created_at, expires_at, payment_status, stripe_session_id, paid_at, terms, blocked_by_merchant_id, blocked_at)
 SELECT id, merchant_id, destination_id, title, item, category, emoji, story_text, gps_lat, gps_lng,
   walking_distance, difficulty, reward_value_usd, is_mystery, kid_friendly, quantity, remaining, fee_usd, photo, status, hunt_id,
   created_at, expires_at, payment_status, stripe_session_id, paid_at, terms, blocked_by_merchant_id, blocked_at
-FROM treasure_drops;
-
-DROP TABLE treasure_drops;
-ALTER TABLE treasure_drops_new RENAME TO treasure_drops;
+FROM _old_drops;
 
 CREATE INDEX idx_drops_dest_status ON treasure_drops(destination_id, status);
 CREATE INDEX idx_drops_merchant ON treasure_drops(merchant_id);
@@ -58,3 +60,4 @@ CREATE INDEX idx_drops_location ON treasure_drops(status, gps_lat, gps_lng);
 
 INSERT OR IGNORE INTO drop_photos (id, drop_id, position, data_url) SELECT id, drop_id, position, data_url FROM _keep_drop_photos;
 DROP TABLE _keep_drop_photos;
+DROP TABLE _old_drops;
