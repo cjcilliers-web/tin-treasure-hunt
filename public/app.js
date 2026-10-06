@@ -77,23 +77,26 @@ function startLocation() {
     if (moved && S.mode === 'traveler' && ['hunt', 'map'].includes(S.view)) render();
   }, () => setGpsLoc(`${S.dest.name} · town centre (location off)`), { enableHighAccuracy: true, maximumAge: 15000, timeout: 20000 });
 }
+const portNow = () => S.port || { slug: S.dest.id, name: S.dest.name, lat: S.dest.lat, lng: S.dest.lng };
 function browseTown(on) {
   S.browseTown = on;
-  if (on) { S.here = { lat: S.dest.lat, lng: S.dest.lng }; S.locSource = 'center'; setLoc(`Exploring ${S.dest.name} · town centre`); }
+  if (on) { const p = portNow(); S.here = { lat: p.lat, lng: p.lng }; S.locSource = 'center'; setLoc(`Exploring ${p.name} · whole town`); }
   else if (S.gps) { S.here = S.gps; S.locSource = 'gps'; setLoc(haversine(S.gps, { lat: S.dest.lat, lng: S.dest.lng }) > 40000 ? 'Your location' : `Your location · ${S.dest.name}`); }
   render();
 }
 // Big LIVE / town switch: LIVE = treasures around where you are now; town = browse the destination.
 const isLive = () => !S.browseTown && S.locSource === 'gps';
 function locSwitch() {
-  const live = isLive();
+  const live = isLive(), p = portNow(), ports = S.ports && S.ports.length ? S.ports : [p];
   return `<div class="locsw" role="group" aria-label="Where to search">
     <button type="button" data-ls="live" class="${live ? 'on' : ''}" aria-pressed="${live}"><span class="livedot"></span><span><b>LIVE</b><small>Near me now</small></span></button>
-    <button type="button" data-ls="town" class="${live ? '' : 'on'}" aria-pressed="${!live}"><span class="townico">🏝️</span><span><b>${esc(S.dest.name)}</b><small>Whole town</small></span></button></div>`;
+    <label class="porttile ${live ? '' : 'on'}"><span class="townico">🏝️</span><span class="portname"><b>${esc(p.name)}</b><small>${ports.length > 1 ? 'Choose a port' : 'Whole town'} <i class="chev">▾</i></small></span>
+      <select id="portsel" aria-label="Choose a port or town">${live ? '<option value="" selected disabled>Choose a port…</option>' : ''}${ports.map((x) => `<option value="${esc(x.slug)}" ${!live && x.slug === p.slug ? 'selected' : ''}>🏝️ ${esc(x.name)}${x.region ? ` · ${esc(x.region)}` : ''}</option>`).join('')}</select></label></div>`;
 }
 function wireLocSwitch(el) {
+  const ps = $('#portsel', el);
+  if (ps) ps.onchange = () => { const x = (S.ports || []).find((p) => p.slug === ps.value); if (x) { S.port = x; try { localStorage.setItem('th_port', x.slug); } catch {} } browseTown(true); };
   $$('[data-ls]', el).forEach((b) => (b.onclick = () => {
-    if (b.dataset.ls === 'town') { if (!S.browseTown || isLive()) browseTown(true); return; }
     if (S.gps) { browseTown(false); return; }
     toast('Finding you… please allow location');
     if (navigator.geolocation) navigator.geolocation.getCurrentPosition((p) => { S.gps = { lat: p.coords.latitude, lng: p.coords.longitude }; browseTown(false); },
@@ -108,7 +111,7 @@ function haversine(a, b) {
 const setLoc = (t) => { $('#locTxt').textContent = t; const l = $('.loc'); if (l) l.classList.toggle('live', S.mode === 'traveler' && isLive()); };
 // GPS updates only label the explorer view; in Merchant mode the bar keeps "Merchant · <business name>".
 const setGpsLoc = (t) => { if (S.mode === 'traveler') setLoc(t); };
-const hereQs = () => (S.locSource === 'gps' ? `&lat=${S.here.lat}&lng=${S.here.lng}` : '');
+const hereQs = () => (S.locSource === 'gps' ? `&lat=${S.here.lat}&lng=${S.here.lng}` : S.browseTown && S.port ? `&lat=${S.here.lat}&lng=${S.here.lng}&browse=1` : '');
 
 /* ---------- boot ---------- */
 async function boot() {
@@ -118,6 +121,13 @@ async function boot() {
   const d = await api(`/api/destinations/${destId}`);
   S.dest = d.destination; S.hunt = d.hunt; S.settings = d.settings; S.nextRaffleAt = d.nextRaffleAt;
   document.title = `TIN Treasure Hunt · ${S.dest.name}`;
+  // Ports live on TIN Commerce (the town dropdown). The last chosen one is remembered.
+  api('/api/ports').then((r) => {
+    S.ports = r.ports || [];
+    let saved = null; try { saved = localStorage.getItem('th_port'); } catch {}
+    S.port = S.ports.find((p) => p.slug === saved) || S.ports.find((p) => p.name === S.dest.name) || S.ports[0] || null;
+    if (S.mode === 'traveler' && S.view === 'hunt') render();
+  }).catch(() => {});
   const sw = $('#viewsw');
   const canMerchant = S.me.role === 'merchant' || S.me.role === 'admin';
   const canHq = S.me.role === 'admin';
@@ -195,7 +205,7 @@ function setMode(m, first) {
   $('#phone').hidden = m === 'hq';
   $('#hq').hidden = m !== 'hq';
   if (m === 'hq') { hqRender(); return; }
-  if (m === 'traveler' && S.dest) setLoc(S.browseTown ? `Exploring ${S.dest.name} · town centre` : S.locSource === 'gps'
+  if (m === 'traveler' && S.dest) setLoc(S.browseTown ? `Exploring ${portNow().name} · whole town` : S.locSource === 'gps'
     ? (haversine(S.here, { lat: S.dest.lat, lng: S.dest.lng }) > 40000 ? 'Your location' : `Your location · ${S.dest.name}`) : `${S.dest.name} · town centre`);
   go(m === 'merchant' ? 'mScan' : 'hunt');
 }
@@ -243,6 +253,7 @@ VIEWS.hunt = async (el) => {
   const data = await api(`/api/drops?destination=${S.dest.id}&radius=${radius}&category=${encodeURIComponent(S.cat)}${hereQs()}`);
   const h = S.hunt;
   el.innerHTML = `
+  ${locSwitch()}
   <div class="theme"><div class="t">${esc(h ? `${h.emoji} ${h.name} in ${S.dest.name}` : `🗺️ Treasure Hunt ${S.dest.name}`)}</div>
     <small>${esc(h?.tagline || `Every verified find earns ${S.settings.creditsPerFind} credits and a raffle ticket.`)} Don't collect coupons. Collect Adventures™.</small></div>
   <div id="grandcard"></div>
@@ -251,7 +262,6 @@ VIEWS.hunt = async (el) => {
   <button class="askp" id="askp">🦜 ${esc(PL().ask)}</button>
   <div class="slider"><div class="lbl"><span>Search distance</span><b id="rv">${radLabel(S.radiusIdx)}</b></div>
     <input type="range" id="rad" min="0" max="${RADII.length - 1}" step="1" value="${S.radiusIdx}" aria-label="Search distance"></div>
-  ${locSwitch()}
   <div class="chips bigchips">${['All', ...CATS].map((c) => `<button class="chip" data-c="${c}" aria-pressed="${S.cat === c}">${c === 'All' ? '🗺️' : CAT_EMO[c]} ${c}</button>`).join('')}</div>
   ${data.drops.length ? data.drops.map(dropCard).join('') : `<p class="empty">No treasures within ${radLabel(S.radiusIdx)}. Slide the distance wider or ask Polly.</p>${!S.browseTown && S.gps && haversine(S.gps, { lat: S.dest.lat, lng: S.dest.lng }) > 40000 ? `<button class="btn" id="town">🗺️ Explore ${esc(S.dest.name)}'s treasures instead</button>` : ''}`}`;
   const tw = $('#town', el); if (tw) tw.onclick = () => browseTown(true);

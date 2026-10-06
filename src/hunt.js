@@ -117,7 +117,7 @@ export async function listDrops(req, env, user) {
     mine = Object.fromEntries(results.map((r) => [r.drop_id, r.status]));
   }
   const cr = (await getSettings(env.DB)).claimRadius;
-  drops.forEach((d) => { d.myStatus = mine[d.id] || null; publicDrop(d, { exact: !!mine[d.id], claimRadius: cr, live: url.searchParams.has('lat') }); });
+  drops.forEach((d) => { d.myStatus = mine[d.id] || null; publicDrop(d, { exact: !!mine[d.id], claimRadius: cr, live: url.searchParams.has('lat') && !url.searchParams.has('browse') }); });
   return json({ here, radius, counts, drops });
 }
 
@@ -134,9 +134,9 @@ export async function getDrop(req, env, user, id) {
        FROM claims c LEFT JOIN redemptions x ON x.claim_id = c.id LEFT JOIN redemption_ratings rr ON rr.redemption_id = x.id
       WHERE c.user_id = ? AND c.drop_id = ? AND c.status IN ('claimed','redeemed')`).bind(user.id, id).first();
   const here = readHere(url, dest);
-  const drop = publicDrop(shapeDrop(r, here, { revealMystery: !!claim || isOwner }), { exact: !!claim || !!isOwner, claimRadius: (await getSettings(env.DB)).claimRadius, live: url.searchParams.has('lat') });
+  const drop = publicDrop(shapeDrop(r, here, { revealMystery: !!claim || isOwner }), { exact: !!claim || !!isOwner, claimRadius: (await getSettings(env.DB)).claimRadius, live: url.searchParams.has('lat') && !url.searchParams.has('browse') });
   // Hidden treasures: only the server knows the spot, so it tells the explorer when they are close enough.
-  if (drop.hidden) drop.canClaim = url.searchParams.has('lat') && drop.hint === 'here';
+  if (drop.hidden) drop.canClaim = url.searchParams.has('lat') && !url.searchParams.has('browse') && drop.hint === 'here';
   return json({ drop, claim });
 }
 
@@ -708,4 +708,25 @@ export async function expireClaims(env) {
   const { results } = await env.DB.prepare(`UPDATE claims SET status = 'abandoned' WHERE status = 'claimed' AND expires_at <= ? RETURNING drop_id`).bind(nowIso()).all();
   if (results.length) await env.DB.batch(results.map((r) => env.DB.prepare('UPDATE treasure_drops SET remaining = remaining + 1 WHERE id = ?').bind(r.drop_id)));
   return results.length;
+}
+
+// Ports / towns that are LIVE on TIN Commerce (for the town dropdown). Cached 10 minutes.
+// If TIN Commerce cannot be reached, the Treasure Hunt's own active destinations are used.
+export async function listPorts(req, env) {
+  const cache = caches.default, key = new Request('https://hunt.tincommerce.com/__tin_ports_v1');
+  const hit = await cache.match(key); if (hit) return hit;
+  let ports = [];
+  try {
+    const base = String(env.TIN_COMMERCE_URL || 'https://tincommerce.com').replace(/\/$/, '');
+    const r = await fetch(`${base}/api/treasure-hunt-ports`, { headers: { accept: 'application/json' } });
+    if (r.ok) ports = ((await r.json()).ports || []).filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng))
+      .map((p) => ({ slug: String(p.slug), name: String(p.name), region: p.region || null, country: p.country || null, lat: p.lat, lng: p.lng }));
+  } catch {}
+  if (!ports.length) {
+    const { results } = await env.DB.prepare(`SELECT id AS slug, name, center_lat AS lat, center_lng AS lng FROM destinations WHERE status IN ('pilot','launched') ORDER BY name`).all().catch(() => ({ results: [] }));
+    ports = results;
+  }
+  const res = json({ ports }, 200, { 'cache-control': 'public, max-age=600' });
+  if (ports.length) await cache.put(key, res.clone());
+  return res;
 }

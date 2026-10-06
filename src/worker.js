@@ -18,6 +18,7 @@ const routes = [
   ['POST', /^\/api\/auth\/logout$/, (r, e) => logout(r, e)],
   ['GET', /^\/api\/me$/, async (r, e, u) => json({ user: publicUser(u) })],
 
+  ['GET', /^\/api\/ports$/, (r, e) => H.listPorts(r, e)],
   ['GET', /^\/api\/destinations\/([a-z0-9-]+)$/, (r, e, u, id) => H.getDestination(r, e, id)],
   ['GET', /^\/api\/drops$/, (r, e, u) => H.listDrops(r, e, u)],
   ['GET', /^\/api\/drops\/(\d+)$/, (r, e, u, id) => H.getDrop(r, e, u, Number(id))],

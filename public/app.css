@@ -449,3 +449,13 @@ video.scan{width:100%;border-radius:12px;background:#000;aspect-ratio:1;object-f
 @keyframes micring{to{transform:rotate(360deg)}}
 .vstate{transition:color .2s}
 .mic.warming + .vstate{color:var(--gold-hi)}
+
+/* Port tile: classy dropdown (a native select laid over the tile, so phones show their own picker) */
+.porttile{position:relative;display:flex;align-items:center;gap:10px;padding:12px;border-radius:16px;border:2px solid var(--line);background:var(--panel);color:var(--muted);cursor:pointer;overflow:hidden}
+.porttile b{display:block;font-size:1.05rem;color:#e4efec}
+.porttile small{display:flex;align-items:center;gap:6px;font-size:.78rem}
+.porttile .chev{font-style:normal;display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;background:rgba(217,169,63,.18);color:var(--gold-hi);font-size:.7rem}
+.porttile.on{border-color:var(--gold);background:linear-gradient(135deg,rgba(217,169,63,.22),rgba(217,169,63,.06));box-shadow:0 0 14px rgba(217,169,63,.3)}
+.porttile.on b{color:var(--gold-hi)}
+.porttile select{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;font-size:16px}
+.locsw{margin-bottom:2px}
