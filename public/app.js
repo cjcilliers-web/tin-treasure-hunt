@@ -113,6 +113,24 @@ const setLoc = (t) => { $('#locTxt').textContent = t; const l = $('.loc'); if (l
 const setGpsLoc = (t) => { if (S.mode === 'traveler') setLoc(t); };
 const hereQs = () => (S.locSource === 'gps' ? `&lat=${S.here.lat}&lng=${S.here.lng}` : S.browseTown && S.port ? `&lat=${S.here.lat}&lng=${S.here.lng}&browse=1` : '');
 
+/* ---------- stay up to date ---------- */
+// Phones keep an open page frozen in the background. When the explorer comes back to it,
+// check whether a newer Treasure Hunt is live and, if so, load it straight away.
+const MY_VERSION = (document.querySelector('script[src*="app.js?v="]')?.getAttribute('src') || '').split('v=')[1] || '';
+let lastVersionCheck = 0;
+async function checkForUpdate(force = false) {
+  if (!MY_VERSION || (!force && Date.now() - lastVersionCheck < 60_000)) return;
+  lastVersionCheck = Date.now();
+  try {
+    const html = await fetch(`/app?check=${Date.now()}`, { cache: 'no-store', credentials: 'same-origin' }).then((r) => r.text());
+    const live = (html.match(/app\.js\?v=([\w-]+)/) || [])[1];
+    if (live && live !== MY_VERSION && !['qr', 'mScan'].includes(S.view)) location.reload();
+  } catch {}
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkForUpdate(); });
+window.addEventListener('pageshow', (e) => { if (e.persisted) checkForUpdate(true); });
+setInterval(() => { if (document.visibilityState === 'visible' && V.state === 'idle') checkForUpdate(); }, 5 * 60_000);
+
 /* ---------- boot ---------- */
 async function boot() {
   try { S.me = (await api('/api/me')).user; } catch { S.me = null; }
