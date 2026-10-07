@@ -29,8 +29,10 @@ export const DEFAULT_SUGGESTIONS = {
 };
 export async function pollySuggestions(env) {
   const r = await env.DB.prepare(`SELECT value FROM settings WHERE key = 'polly_suggestions'`).first().catch(() => null);
-  try { const v = JSON.parse(r?.value || ''); if (v && typeof v === 'object') return { ...DEFAULT_SUGGESTIONS, ...v }; } catch {}
-  return DEFAULT_SUGGESTIONS;
+  const asItems = (list) => (list || []).map((x) => (typeof x === 'string' ? { q: x, a: '' } : { q: String(x.q || ''), a: String(x.a || '') })).filter((x) => x.q);
+  const base = Object.fromEntries(Object.entries(DEFAULT_SUGGESTIONS).map(([l, v]) => [l, asItems(v)]));
+  try { const v = JSON.parse(r?.value || ''); if (v && typeof v === 'object') { for (const [l, list] of Object.entries(v)) base[l] = asItems(list); } } catch {}
+  return base;
 }
 
 async function settings(env) {
@@ -155,6 +157,8 @@ export async function adminGivePolly(req, env, user) {
   if (!u) bad('No explorer with that email', 404);
   await pollyAccount(env, u.id);
   await env.DB.prepare('UPDATE polly_credits SET granted_neurons = granted_neurons + ?, updated_at = ? WHERE user_id = ?').bind(credits * NEURONS_PER_CREDIT, nowIso(), u.id).run();
+  // A gift lights up the explorer's notification bell (Treasure Hunt and TIN User Cockpit).
+  if (credits > 0) await env.DB.prepare('INSERT INTO polly_gifts(user_id, credits, note) VALUES (?,?,?)').bind(u.id, credits, b.note ? str(b.note, { max: 200, name: 'Note' }) : null).run();
   return json({ ok: true, ...(await pollyAccount(env, u.id)) });
 }
 
@@ -174,11 +178,56 @@ export async function adminPollySettings(req, env, user) {
     const out = {};
     for (const l of ['en', 'es', 'pt', 'fr', 'de']) {
       const list = Array.isArray(b.suggestions[l]) ? b.suggestions[l] : [];
-      const clean = list.map((x) => String(x).replace(/\s+/g, ' ').trim().slice(0, 80)).filter(Boolean).slice(0, 12);
-      if (clean.length) out[l] = clean;
+      const clean = list.map((x) => (typeof x === 'string' ? { q: x, a: '' } : x))
+        .map((x) => ({ q: String(x.q || '').replace(/\s+/g, ' ').trim().slice(0, 80), a: String(x.a || '').trim().slice(0, 1200) })).filter((x) => x.q).slice(0, 20);
+      out[l] = clean;
     }
     stmts.push(env.DB.prepare(`INSERT INTO settings(key, value) VALUES ('polly_suggestions', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).bind(JSON.stringify(out)));
   }
   if (stmts.length) await env.DB.batch(stmts);
   return json({ ok: true, settings: await settings(env) });
+}
+
+// ---------- gift notifications ----------
+async function unseenGifts(env, userId) {
+  const { results } = await env.DB.prepare('SELECT id, credits, note, created_at FROM polly_gifts WHERE user_id = ? AND seen_at IS NULL ORDER BY id DESC LIMIT 20').bind(userId).all();
+  return results;
+}
+// GET /api/polly/gifts — the explorer's unseen gifts
+export async function myPollyGifts(req, env, user) {
+  requireRole(user);
+  const gifts = await unseenGifts(env, user.id);
+  return json({ count: gifts.length, credits: gifts.reduce((t, g) => t + g.credits, 0), gifts });
+}
+// POST /api/polly/gifts/seen — the explorer opened the notification: it goes off everywhere
+export async function seenPollyGifts(req, env, user) {
+  requireRole(user);
+  await env.DB.prepare('UPDATE polly_gifts SET seen_at = ? WHERE user_id = ? AND seen_at IS NULL').bind(nowIso(), user.id).run();
+  return json({ ok: true });
+}
+// GET /api/tin/polly-gifts?ticket= — asked server-to-server by TIN Commerce (User Cockpit) with a one-time ticket
+export async function tinPollyGifts(req, env) {
+  const { verifyTinTicket } = await import('./auth.js');
+  const who = await verifyTinTicket(env, new URL(req.url).searchParams.get('ticket'), 'user-sso');
+  const email = String(who?.email || '').trim().toLowerCase();
+  if (!email) return json({ error: 'Not allowed' }, 401);
+  const u = await env.DB.prepare('SELECT id FROM tin_users WHERE lower(email) = ?').bind(email).first();
+  if (!u) return json({ count: 0, credits: 0 });
+  const gifts = await unseenGifts(env, u.id);
+  return json({ count: gifts.length, credits: gifts.reduce((t, g) => t + g.credits, 0) }, 200, { 'cache-control': 'no-store' });
+}
+
+// ---------- Polly's shortcut questions with HQ-written answers ----------
+const norm = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+/** The answer TIN HQ wrote for this question (any language), or null. */
+export async function customAnswer(env, q, lang) {
+  const all = await pollySuggestions(env);
+  const n = norm(q); if (n.length < 3) return null;
+  const order = [lang, ...Object.keys(all).filter((l) => l !== lang)];
+  for (const l of order) for (const it of all[l] || []) {
+    if (!it.a) continue;
+    const k = norm(it.q);
+    if (k && (k === n || (k.length >= 10 && (n.includes(k) || k.includes(n) && n.length >= 10)))) return { answer: it.a, lang: l };
+  }
+  return null;
 }
