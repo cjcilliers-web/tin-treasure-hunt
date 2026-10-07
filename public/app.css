@@ -498,3 +498,7 @@ video.scan{width:100%;border-radius:12px;background:#000;aspect-ratio:1;object-f
 .psugg .chip{font-size:.92rem;font-weight:600;padding:8px 12px;border-width:1.5px;border-radius:12px}
 /* Polly suggestions: compact, two or more per row */
 .psugg .chip{font-size:.85rem;font-weight:600;padding:6px 11px;border-radius:999px;border-width:1.5px}
+/* Hear Polly again */
+.msg .replay{display:block;margin:0 0 6px auto;background:rgba(63,182,168,.15);border:1px solid rgba(63,182,168,.5);color:#bff3ea;border-radius:999px;padding:3px 10px;font-size:.78rem;font-weight:700;cursor:pointer}
+.msg .replay:active{background:var(--gold);color:#1a1405}
+.back-tin#backUser{white-space:nowrap}

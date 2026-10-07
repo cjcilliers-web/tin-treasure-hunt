@@ -226,7 +226,7 @@ async function refreshCredits() {
 function setMode(m, first) {
   if (S.merchantOnly) m = 'merchant';
   S.mode = m; saveUi();
-  { const back = $('#backTin'); if (back) back.hidden = m !== 'merchant'; }
+  { const back = $('#backTin'); if (back) back.hidden = m !== 'merchant'; const bu = $('#backUser'); if (bu) bu.hidden = m !== 'traveler'; }
   $$('#viewsw [data-mode]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === m)));
   $('#phone').hidden = m === 'hq';
   $('#hq').hidden = m !== 'hq';
@@ -804,12 +804,8 @@ VIEWS.polly = async (el) => {
   if (fresh && V.speak) { unlockAudio(); pollySpeak(S.chat[0].t, [], PL().code); }
 };
 
-// Tap anywhere while Polly talks: she stops (the microphone buttons handle their own taps).
-document.addEventListener('pointerdown', (e) => {
-  if (!['speaking', 'warming'].includes(V.state)) return;
-  if (e.target.closest && e.target.closest('.mic')) return;
-  stopVoice(); V.sayId = (V.sayId || 0) + 1; V.pending = null; voiceShow('idle');
-}, true);
+// Polly keeps talking while you scroll or read. She stops when you ask something new (a suggestion,
+// the Ask box or the microphone), open a treasure, change language or leave her page.
 
 /* ---------- Polly Credits ---------- */
 const suggHtml = (list) => list.map((x) => `<button class="chip" data-s="${esc(x)}">${esc(x)}</button>`).join('');
@@ -1025,8 +1021,9 @@ try { window.speechSynthesis && speechSynthesis.getVoices(); window.speechSynthe
 
 function drawChat(scroll = true) {
   const c = $('#chat'); if (!c) return;
-  c.innerHTML = S.chat.map((m) => `<div class="msg ${m.p ? 'p' : 'u'}">${esc(m.t)}${m.drops?.length ? `<div class="mini">${m.drops.map((d) => `<button data-d="${d.id}">${d.n ? `<b>${d.n}.</b> ` : ''}${tIco(d)} ${esc(d.title)} · ${d.secret ? '🔒 secret spot' : fmtD(d.distanceM)}</button>`).join('')}</div>` : ''}</div>`).join('');
+  c.innerHTML = S.chat.map((m, mi) => `<div class="msg ${m.p ? 'p' : 'u'}">${m.p && m.t !== '…' ? `<button class="replay" data-replay="${mi}" aria-label="Hear this again">🔊 Play again</button>` : ''}${esc(m.t)}${m.drops?.length ? `<div class="mini">${m.drops.map((d) => `<button data-d="${d.id}">${d.n ? `<b>${d.n}.</b> ` : ''}${tIco(d)} ${esc(d.title)} · ${d.secret ? '🔒 secret spot' : fmtD(d.distanceM)}</button>`).join('')}</div>` : ''}</div>`).join('');
   $$('[data-d]', c).forEach((b) => (b.onclick = () => { voiceStop(); go('detail', Number(b.dataset.d)); }));
+  $$('[data-replay]', c).forEach((b) => (b.onclick = () => { const m = S.chat[Number(b.dataset.replay)]; if (!m) return; unlockAudio(); V.speak = true; const t = $('#vspeak'); if (t) t.checked = true; pollySpeak(m.t, m.drops || [], PL().code); }));
   // Show the newest message (Polly's answer) where the explorer is looking.
   const last = c.lastElementChild;
   if (!scroll) { const scr = $('#screen'); if (scr) scr.scrollTop = 0; return; }
