@@ -259,8 +259,7 @@ async function context(env, user, destId, b) {
   return { dest, here, drops, nowMin };
 }
 
-export async function askPolly(req, env, user) {
-  const b = await body(req, 5_000);
+async function askPollyInner(req, env, user, b) {
   const q = str(b.q, { min: 1, max: 400, name: 'Question' });
   // TIN HQ wrote an exact answer for this question: Polly says that.
   const hq = await customAnswer(env, q, LANGS.includes(b.lang) ? b.lang : (detectLang(q) || 'en'));
@@ -329,6 +328,20 @@ export async function askPolly(req, env, user) {
   const greeting = /^(hi|hello|hey|hola|olá|ola|bonjour|salut|hallo)\b[!.\s]*$/i.test(q.trim());
   const reply = greeting ? L.hello : L.found(drops.length, what);
   return json({ reply, intent, drops: drops.slice(0, 5).map((d, i) => mini(d, i, false)) });
+}
+
+// Every question and Polly's answer is kept (text only) so TIN HQ can read them and write better answers.
+export async function askPolly(req, env, user) {
+  const b = await body(req, 5_000);
+  const res = await askPollyInner(req, env, user, b);
+  try {
+    const data = await res.clone().json();
+    const drops = Array.isArray(data.drops) && data.drops.length ? ' · ' + data.drops.slice(0, 5).map((d) => d.title).join(', ') : '';
+    const src = ['button', 'typed', 'voice'].includes(b.src) ? b.src : 'typed';
+    await env.DB.prepare('INSERT INTO polly_log(user_id, lang, source, question, answer, hq_answer) VALUES (?,?,?,?,?,?)')
+      .bind(user?.id || null, data.intent?.lang || b.lang || null, src, String(b.q || '').slice(0, 400), String(data.reply || data.error || '').slice(0, 1200) + drops.slice(0, 400), data.intent?.hq ? 1 : 0).run();
+  } catch {}
+  return res;
 }
 
 // Proactive tip for the Hunt screen. Most useful thing first.

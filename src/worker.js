@@ -47,6 +47,7 @@ const routes = [
   ['GET', /^\/api\/admin\/polly$/, (r, e, u) => PC.adminPolly(r, e, u)],
   ['POST', /^\/api\/admin\/polly\/credits$/, (r, e, u) => PC.adminGivePolly(r, e, u)],
   ['PUT', /^\/api\/admin\/polly\/settings$/, (r, e, u) => PC.adminPollySettings(r, e, u)],
+  ['GET', /^\/api\/admin\/polly\/log$/, (r, e, u) => PC.adminPollyLog(r, e, u)],
 
   ['POST', /^\/api\/merchant\/apply$/, (r, e, u) => H.applyMerchant(r, e, u)],
   ['GET', /^\/api\/merchant\/me$/, (r, e, u) => H.merchantMe(r, e, u)],

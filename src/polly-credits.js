@@ -231,3 +231,12 @@ export async function customAnswer(env, q, lang) {
   }
   return null;
 }
+
+// GET /api/admin/polly/log?only=asked — what explorers asked and what Polly answered
+export async function adminPollyLog(req, env, user) {
+  requireRole(user, 'admin');
+  const only = new URL(req.url).searchParams.get('only');
+  const { results } = await env.DB.prepare(`SELECT l.id, l.lang, l.source, l.question, l.answer, l.hq_answer, l.created_at, u.display_name AS name, u.email
+      FROM polly_log l LEFT JOIN tin_users u ON u.id = l.user_id ${only === 'asked' ? "WHERE l.source IN ('typed','voice')" : ''} ORDER BY l.id DESC LIMIT 100`).all();
+  return json({ log: results });
+}

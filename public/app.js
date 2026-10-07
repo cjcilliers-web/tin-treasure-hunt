@@ -836,7 +836,7 @@ setInterval(() => { if (document.visibilityState === 'visible' && S.mode === 'tr
 
 /* ---------- Polly Credits ---------- */
 const suggHtml = (list) => list.map((x) => `<button class="chip" data-s="${esc(x)}">${esc(x)}</button>`).join('');
-function wireSugg(root) { $$('[data-s]', root).forEach((b) => (b.onclick = () => { unlockAudio(); pollyAsk(b.dataset.s, true); })); }
+function wireSugg(root) { $$('[data-s]', root).forEach((b) => (b.onclick = () => { unlockAudio(); pollyAsk(b.dataset.s, true, 'button'); })); }
 function showPollyCredits(n) { S.pollyCredits = n; const b = $('#pcb'); if (b) b.textContent = n == null ? '…' : Number(n).toLocaleString(); const c = $('#pcred'); if (c) c.classList.toggle('low', n != null && n < 10); }
 async function loadPollyCredits() {
   try {
@@ -1057,13 +1057,13 @@ function drawChat(scroll = true) {
   if (last) requestAnimationFrame(() => last.scrollIntoView({ behavior: 'smooth', block: 'center' }));
 }
 
-async function pollyAsk(q, byVoice = false) {
+async function pollyAsk(q, byVoice = false, src = null) {
   if (['speaking', 'warming'].includes(V.state)) { stopVoice(); V.sayId = (V.sayId || 0) + 1; V.state = 'idle'; }
   S.chat.push({ p: false, t: q }); S.chat.push({ p: true, t: '…' }); drawChat();
   if (byVoice) voiceShow('thinking');
   const lang = PL().code;
   try {
-    const r = await api('/api/polly', { method: 'POST', body: { q, lang, destination: S.dest.id, ...(S.locSource === 'gps' ? { lat: S.here.lat, lng: S.here.lng } : {}) } });
+    const r = await api('/api/polly', { method: 'POST', body: { q, lang, src: src || (byVoice ? 'voice' : 'typed'), destination: S.dest.id, ...(S.locSource === 'gps' ? { lat: S.here.lat, lng: S.here.lng } : {}) } });
     S.chat[S.chat.length - 1] = { p: true, t: r.reply, drops: r.drops };
     drawChat();
     loadPollyCredits();
@@ -1938,7 +1938,12 @@ HQ.polly = async (el) => {
     <div class="card" style="gap:8px"><h3>💬 Polly's questions &amp; answers</h3><p class="note" style="margin:0">These are the question buttons explorers tap. Write the exact <b>answer</b> Polly should say. <b>Leave the answer empty</b> for questions about live treasures, credits or opening hours: Polly then answers from live data. Up to 20 per language.</p>
       <div class="plangs" id="qaLangs">${[['en', '🇺🇸 English'], ['es', '🇲🇽 Español'], ['pt', '🇧🇷 Português'], ['fr', '🇫🇷 Français'], ['de', '🇩🇪 Deutsch']].map(([l, n], i) => `<button type="button" class="${i ? '' : 'on'}" data-qal="${l}">${n}</button>`).join('')}</div>
       <div id="qaRows"></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="sbtn" id="qaAdd">＋ Add a question</button><button type="button" class="sbtn gold" id="qaSave">💾 Save questions &amp; answers</button></div></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="sbtn" id="qaAdd">＋ Add a question</button><button type="button" class="sbtn gold" id="qaSave">💾 Save questions &amp; answers</button></div>
+      <hr style="border:0;border-top:1px solid var(--line);width:100%">
+      <h3 style="margin:0">🗒️ What explorers asked Polly</h3>
+      <p class="note" style="margin:0">The latest 100 questions with Polly's answer. Tap <b>＋ Make it a question</b> to add it to the list above, write the answer, then Save.</p>
+      <div class="plangs"><button type="button" class="on" data-logf="asked">Typed &amp; spoken</button><button type="button" data-logf="all">Everything (also buttons)</button></div>
+      <div id="qaLog" class="qalog"><div class="spin"></div></div></div>
     <div class="card" style="gap:6px"><h3>Polly Admin wallet</h3>${d.wallet.entries.map((w) => `<div class="note">${new Date(w.created_at).toLocaleString()} · <b>$${Number(w.amount_usd).toFixed(2)}</b> · ${esc(w.reason)} · ${esc(w.note || '')}</div>`).join('') || '<p class="note">No entries yet. Top-ups land here.</p>'}</div>`;
   $('#pgive', el).onsubmit = async (e) => { e.preventDefault(); const f = Object.fromEntries(new FormData(e.target));
     try { const r = await api('/api/admin/polly/credits', { method: 'POST', body: { email: f.email, credits: Number(f.credits), note: f.note || undefined } }); hqToast(`Done. They now have ${r.credits} Polly Credits${Number(f.credits) > 0 ? ' and a 🔔 notification' : ''}.`); HQ.polly(el); } catch (er) { hqToast(er.message); } };
@@ -1958,6 +1963,27 @@ HQ.polly = async (el) => {
     try { await api('/api/admin/polly/settings', { method: 'PUT', body: { suggestions: qa } }); S.pollySugg = null; hqToast('Questions & answers saved'); HQ.polly(el); } catch (er) { hqToast(er.message); }
   };
   qaDraw();
+  // Transcript: what explorers asked and what Polly answered
+  const srcIcon = { typed: '⌨️ typed', voice: '🎤 spoken', button: '💬 button' };
+  const loadLog = async (only) => {
+    const box = $('#qaLog', el); if (!box) return;
+    try {
+      const { log } = await api(`/api/admin/polly/log${only === 'asked' ? '?only=asked' : ''}`);
+      box.innerHTML = log.map((x) => `<div class="qalog-item"><div class="note">${new Date(x.created_at).toLocaleString()} · ${esc(x.name || x.email || 'Explorer')} · ${srcIcon[x.source] || ''} · ${esc((x.lang || '').toUpperCase())}${x.hq_answer ? ' · <b style="color:var(--gold-hi)">your answer</b>' : ''}</div>
+        <div class="qalog-q">🙋 ${esc(x.question)}</div><div class="qalog-a">🦜 ${esc(x.answer || '')}</div>
+        <button type="button" class="sbtn" data-mkq="${x.id}">＋ Make it a question</button></div>`).join('') || '<p class="note">Nothing asked yet.</p>';
+      $$('[data-mkq]', box).forEach((b) => (b.onclick = () => {
+        const x = log.find((y) => String(y.id) === b.dataset.mkq); if (!x) return;
+        const l = ['en', 'es', 'pt', 'fr', 'de'].includes(x.lang) ? x.lang : qaLang;
+        (qa[l] || (qa[l] = [])).push({ q: x.question.slice(0, 80), a: '' });
+        qaLang = l; $$('[data-qal]', el).forEach((y) => y.classList.toggle('on', y.dataset.qal === l)); qaDraw();
+        const rows = [...$$('.qaa', el)]; const t = rows.pop(); if (t) { t.scrollIntoView({ behavior: 'smooth', block: 'center' }); t.focus(); }
+        hqToast('Added. Write Polly\'s answer, then Save.');
+      }));
+    } catch (e) { box.innerHTML = `<p class="note">${esc(e.message)}</p>`; }
+  };
+  $$('[data-logf]', el).forEach((b) => (b.onclick = () => { $$('[data-logf]', el).forEach((x) => x.classList.toggle('on', x === b)); loadLog(b.dataset.logf); }));
+  loadLog('asked');
   $('#pset', el).onsubmit = async (e) => { e.preventDefault(); const f = Object.fromEntries(new FormData(e.target));
     const packs = d.settings.packs.map((_, i) => ({ credits: Number(f[`c${i}`]), usd: Number(f[`u${i}`]) }));
     try { await api('/api/admin/polly/settings', { method: 'PUT', body: { startCredits: Number(f.start), packs } }); hqToast('Saved'); HQ.polly(el); } catch (er) { hqToast(er.message); } };
