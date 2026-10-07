@@ -520,3 +520,9 @@ video.scan{width:100%;border-radius:12px;background:#000;aspect-ratio:1;object-f
 .qahead{display:flex;gap:8px;align-items:center}
 .qahead .qaq{flex:1;font-weight:700}
 .qarow .qaa{width:100%;resize:vertical}
+/* HQ: transcript of what explorers asked */
+.qalog{display:grid;gap:8px;max-height:520px;overflow-y:auto}
+.qalog-item{display:grid;gap:4px;padding:10px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.02)}
+.qalog-q{font-weight:700}
+.qalog-a{color:#cfe0dc;font-size:.9rem}
+.qalog-item .sbtn{justify-self:start}
