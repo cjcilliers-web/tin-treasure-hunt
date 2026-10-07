@@ -502,3 +502,21 @@ video.scan{width:100%;border-radius:12px;background:#000;aspect-ratio:1;object-f
 .msg .replay{display:block;margin:0 0 6px auto;background:rgba(63,182,168,.15);border:1px solid rgba(63,182,168,.5);color:#bff3ea;border-radius:999px;padding:3px 10px;font-size:.78rem;font-weight:700;cursor:pointer}
 .msg .replay:active{background:var(--gold);color:#1a1405}
 .back-tin#backUser{white-space:nowrap}
+
+/* Notification bell (free Polly Credits from TIN) */
+.locrow{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.giftbell{position:relative;width:44px;height:44px;flex:none;border-radius:50%;border:3px solid #d9a93f;background:#fff8e6;font-size:1.3rem;display:grid;place-items:center;cursor:pointer;opacity:.75}
+.giftbell.lit{opacity:1;animation:bellGlow 1.4s ease-in-out infinite}
+.giftbell.lit::before{content:"";position:absolute;inset:-6px;border-radius:50%;box-shadow:0 0 14px 4px rgba(242,196,90,.7)}
+.gb-n{position:absolute;top:-6px;right:-6px;min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:#e0464b;color:#fff;font:800 .72rem/20px var(--f-body,sans-serif)}
+@keyframes bellGlow{0%,100%{transform:rotate(0)}10%{transform:rotate(-14deg)}20%{transform:rotate(12deg)}30%{transform:rotate(-8deg)}40%{transform:rotate(0)}}
+.giftmodal{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.6);display:grid;place-items:center;padding:16px}
+.giftcard{position:relative;width:min(420px,100%);background:linear-gradient(160deg,#173a35,#0e1f1d);border:2px solid #d9a93f;border-radius:20px;padding:24px 18px;text-align:center;display:grid;gap:10px;color:#eef6f4}
+.giftcard h3{margin:0;font-size:1.3rem;color:#f2c45a}
+.giftbig{font-size:3.4rem;line-height:1}
+.giftline{margin:0;font-size:1.1rem}
+/* HQ: questions & answers */
+.qarow{display:grid;gap:6px;padding:10px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.02)}
+.qahead{display:flex;gap:8px;align-items:center}
+.qahead .qaq{flex:1;font-weight:700}
+.qarow .qaa{width:100%;resize:vertical}

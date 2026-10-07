@@ -13,7 +13,7 @@
 //      Sunday raffle.
 import { body, json, str, distanceM, walkMin, nextRaffleAt, lastRaffleAt, iso, getSettings } from './lib.js';
 import { liveDrops } from './hunt.js';
-import { costNeurons, canAfford, chargePolly, pollyAccount } from './polly-credits.js';
+import { costNeurons, canAfford, chargePolly, pollyAccount, customAnswer } from './polly-credits.js';
 
 export const LANGS = ['en', 'es', 'pt', 'fr', 'de'];
 
@@ -262,6 +262,9 @@ async function context(env, user, destId, b) {
 export async function askPolly(req, env, user) {
   const b = await body(req, 5_000);
   const q = str(b.q, { min: 1, max: 400, name: 'Question' });
+  // TIN HQ wrote an exact answer for this question: Polly says that.
+  const hq = await customAnswer(env, q, LANGS.includes(b.lang) ? b.lang : (detectLang(q) || 'en'));
+  if (hq) return json({ reply: hq.answer, intent: { lang: hq.lang, hq: true } });
   let intent = await aiIntent(env, q, ruleIntent(q), user);
   // No language clues and not obviously English: answer in the account's language.
   if (!detectLang(q) && !intent.ai && user && LANGS.includes(user.language) && user.language !== 'en'
