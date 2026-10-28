@@ -131,7 +131,7 @@ export async function verifyTinTicket(env, ticket, purpose) {
   } catch { return null; }
 }
 
-async function userForEmail(env, email, name, role) {
+export async function userForEmail(env, email, name, role) {
   let row = await env.DB.prepare('SELECT id, role FROM tin_users WHERE email = ?').bind(email).first();
   if (!row) {
     // No password is known here; a random one is stored so the account is entered via TIN.

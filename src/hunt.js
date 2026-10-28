@@ -456,23 +456,8 @@ export async function confirmRedemption(req, env, user) {
   if (!c) bad('This code is not valid any more', 410);
   if (c.merchant_id !== mid) bad('This code is for a different merchant', 403);
 
-  // Guard: only one confirmation can flip the claim.
-  const flipped = await env.DB.prepare(`UPDATE claims SET status = 'redeemed' WHERE id = ? AND status = 'claimed' RETURNING id`).bind(c.id).first();
-  if (!flipped) bad('This code was just redeemed', 409);
-
-  const s = await getSettings(env.DB);
-  const credits = s.creditsPerFind * (DIFF_MULT[c.difficulty] || 1);
-  const p = await env.DB.prepare('INSERT INTO redemption_proofs(kind, data_url) VALUES (?, ?) RETURNING id').bind(type, proof).first();
-  const now = nowIso();
-  const [red] = await env.DB.batch([
-    env.DB.prepare(`INSERT INTO redemptions(claim_id, user_id, drop_id, merchant_id, confirmed_by, redeemed_at, confirmation_type, confirmation_reference, credits_awarded)
-                    VALUES (?,?,?,?,?,?,?,?,?) RETURNING id`).bind(c.id, c.user_id, c.drop_id, c.merchant_id, user.id, now, type, `proof:${p.id}`, credits),
-    // Credits land ONLY here, after merchant confirmation.
-    env.DB.prepare(`INSERT INTO treasure_hunt_credits(user_id, balance, last_updated) VALUES (?, ?, ?)
-                    ON CONFLICT(user_id) DO UPDATE SET balance = balance + excluded.balance, last_updated = excluded.last_updated`).bind(c.user_id, credits, now),
-    env.DB.prepare(`INSERT INTO treasure_hunt_credit_ledger(user_id, amount, reason, ref) VALUES (?, ?, 'redemption', ?)`).bind(c.user_id, credits, `claim:${c.id}`),
-  ]);
-  return json({ ok: true, redemptionId: red.results[0].id, creditsAwarded: credits }, 201);
+  const done = await finishRedemption(env, c, user.id, type, proof);
+  return json({ ok: true, ...done }, 201);
 }
 
 export async function merchantStats(req, env, user) {
@@ -738,4 +723,26 @@ export async function listPorts(req, env) {
   const res = json({ ports }, 200, { 'cache-control': 'public, max-age=600' });
   if (ports.length) await cache.put(key, res.clone());
   return res;
+}
+
+// Flips a claim to redeemed, stores the proof and awards the traveler's credits (one place for both
+// the Treasure Hunt merchant screen and the TIN Commerce Scan & Verify tool).
+export async function finishRedemption(env, c, confirmedBy, type, proof) {
+  // Guard: only one confirmation can flip the claim.
+  const flipped = await env.DB.prepare(`UPDATE claims SET status = 'redeemed' WHERE id = ? AND status = 'claimed' RETURNING id`).bind(c.id).first();
+  if (!flipped) bad('This code was just redeemed', 409);
+
+  const s = await getSettings(env.DB);
+  const credits = s.creditsPerFind * (DIFF_MULT[c.difficulty] || 1);
+  const p = await env.DB.prepare('INSERT INTO redemption_proofs(kind, data_url) VALUES (?, ?) RETURNING id').bind(type, proof).first();
+  const now = nowIso();
+  const [red] = await env.DB.batch([
+    env.DB.prepare(`INSERT INTO redemptions(claim_id, user_id, drop_id, merchant_id, confirmed_by, redeemed_at, confirmation_type, confirmation_reference, credits_awarded)
+                    VALUES (?,?,?,?,?,?,?,?,?) RETURNING id`).bind(c.id, c.user_id, c.drop_id, c.merchant_id, confirmedBy, now, type, `proof:${p.id}`, credits),
+    // Credits land ONLY here, after merchant confirmation.
+    env.DB.prepare(`INSERT INTO treasure_hunt_credits(user_id, balance, last_updated) VALUES (?, ?, ?)
+                    ON CONFLICT(user_id) DO UPDATE SET balance = balance + excluded.balance, last_updated = excluded.last_updated`).bind(c.user_id, credits, now),
+    env.DB.prepare(`INSERT INTO treasure_hunt_credit_ledger(user_id, amount, reason, ref) VALUES (?, ?, 'redemption', ?)`).bind(c.user_id, credits, `claim:${c.id}`),
+  ]);
+  return { redemptionId: red.results[0].id, creditsAwarded: credits };
 }
