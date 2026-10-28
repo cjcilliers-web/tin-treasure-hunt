@@ -7,7 +7,7 @@ import * as PC from './polly-credits.js';
 import { runRaffle, raffleStatus, raffleDrawNow } from './raffle.js';
 import { payDrop, verifyCheckout, stripeWebhook } from './payments.js';
 import { syncTinMerchants, adminSyncTin, publicSyncTin } from './tin-sync.js';
-import { merchantSummary } from './tin-link.js';
+import { merchantSummary, tinRedeem } from './tin-link.js';
 import * as G from './grand.js';
 import { adNetworkVideos, adNetworkView } from './ad-network.js';
 import { myDropCredits, buyCredits, verifyCreditsCheckout, adminGiveCredits } from './credits.js';
@@ -112,6 +112,7 @@ const routes = [
   ['GET', /^\/api\/ad-network\/videos$/, (r, e) => adNetworkVideos(r, e)],
   ['POST', /^\/api\/ad-network\/view$/, (r, e) => adNetworkView(r, e)],
   ['POST', /^\/api\/tin\/merchant-summary$/, (r, e) => merchantSummary(r, e)],
+  ['POST', /^\/api\/tin\/redeem$/, (r, e) => tinRedeem(r, e)],
 ];
 
 const SECURITY_HEADERS = {
