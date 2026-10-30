@@ -1,0 +1,9 @@
+CREATE TABLE IF NOT EXISTS studio_drop_rewards(
+ drop_id INTEGER PRIMARY KEY NOT NULL REFERENCES treasure_drops(id),
+ credits INTEGER NOT NULL CHECK(credits>=0 AND credits<=100)
+);
+CREATE TABLE IF NOT EXISTS studio_pickup_receipts(
+ id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,drop_id INTEGER NOT NULL,
+ credits INTEGER NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ UNIQUE(user_id,drop_id)
+);

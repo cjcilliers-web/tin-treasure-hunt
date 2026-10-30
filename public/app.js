@@ -450,7 +450,7 @@ const radLabel = (i) => (i === RADII.length - 1 ? 'All' : fmtD(RADII[i]));
 function dropCard(d) {
   const st = d.myStatus === 'redeemed' ? 'Found ✓' : d.myStatus === 'claimed' ? 'Claimed' : `${d.remaining} left`;
   return `<button class="drop ${d.myStatus === 'redeemed' ? 'done' : ''}" data-d="${d.id}"><span class="chest">${tIco(d)}</span>
-    <span><div class="n">${esc(d.title)}</div><div class="m">${d.mystery ? 'Mystery reward' : esc(d.item)} · ${esc(d.merchant)}</div>
+    <span><div class="n">${esc(d.title)}</div><div class="m">${d.mystery ? 'Mystery reward' : esc(d.item)}${d.studioCredits ? ` · 🎬 +${d.studioCredits} Studio Credits` : ''} · ${esc(d.merchant)}</div>
     <div class="m">${diffBadge(d)} · ${d.rating ? `★ ${Number(d.rating).toFixed(1)}` : 'New'}</div></span>
     <span class="d">${distTxt(d)}<small>${st}</small></span></button>`;
 }
@@ -1630,7 +1630,7 @@ function splitEmojis(text) {
 let hqTab = 'overview';
 async function hqRender() {
   const el = $('#hq');
-  const tabs = [['overview', 'Overview'], ['merchants', 'Merchants'], ['drops', 'Treasure Drops'], ['hunts', 'Hunts'], ['grand', 'Grand Treasure'], ['videos', 'Videos'], ['raffle', 'Raffle'], ['polly', '🦜 Polly'], ['icons', '🎨 Icons'], ['settings', 'Settings']];
+  const tabs = [['overview', 'Overview'], ['merchants', 'Merchants'], ['drops', 'Treasure Drops'], ['hunts', 'Hunts'], ['grand', 'Grand Treasure'], ['videos', 'Videos'], ['raffle', 'Raffle'], ['polly', '🦜 Polly'], ['icons', '🎨 Icons'], ['settings', 'Settings'], ['studio', '🎬 Studio pickup rewards']];
   el.innerHTML = `<div class="hqbar"><h1>TIN <em>HQ</em> · ${esc(S.dest.name)}</h1><span class="note">Signed in as ${esc(S.me.name)} · <button class="linkbtn" id="hqOut">Sign out</button></span></div>
   <div class="hqtabs" role="tablist">${tabs.map(([k, l]) => `<button role="tab" data-t="${k}" aria-selected="${hqTab === k}">${l}</button>`).join('')}</div>
   <div id="hqb"><div class="spin"></div></div>`;
@@ -2054,3 +2054,11 @@ HQ.settings = async (el) => {
 };
 
 boot().catch((e) => { document.body.innerHTML = `<p class="empty" style="padding:40px">${esc(e.message)}</p>`; });
+
+
+// Personal Studio pickups are configured separately from the Treasure Hunt credit pool.
+HQ.studio = async (el) => {
+  const data=await api('/api/admin/studio-rewards');
+  el.innerHTML=`<div class="card"><h2>Studio pickup rewards</h2><p>Set a Video Studio reward for a treasure. One Studio Credit creates one personal 30-second / 8-photo video. Each explorer earns the reward once per treasure. Changing a reward affects future pickups.</p><form id="studioReward"><label>Treasure<select name="dropId">${data.drops.map(d=>`<option value="${d.id}">${esc(d.title)} · ${d.credits} Studio Credits</option>`).join('')}</select></label><label>Studio Credits<input type="number" name="credits" min="0" max="100" value="1" required></label><button class="btn">Save Studio reward</button></form><p>Explorers collect these rewards from their TIN personal Studio.</p><a href="https://tincommerce.com/video-studio/?personal=1">Open my TIN Studio →</a></div>`;
+  $('#studioReward',el).onsubmit=async e=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.target));try{await api('/api/admin/studio-rewards',{method:'POST',body:{dropId:Number(f.dropId),credits:Number(f.credits)}});hqToast('Studio reward saved');hqRender()}catch(e){hqToast(e.message)}};
+};
