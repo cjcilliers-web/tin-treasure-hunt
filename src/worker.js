@@ -8,12 +8,16 @@ import { runRaffle, raffleStatus, raffleDrawNow } from './raffle.js';
 import { payDrop, verifyCheckout, stripeWebhook } from './payments.js';
 import { syncTinMerchants, adminSyncTin, publicSyncTin } from './tin-sync.js';
 import { merchantSummary, tinRedeem } from './tin-link.js';
+import { studioClaims, studioAdmin } from './studio-rewards.js';
 import * as G from './grand.js';
 import { adNetworkVideos, adNetworkView } from './ad-network.js';
 import { myDropCredits, buyCredits, verifyCreditsCheckout, adminGiveCredits } from './credits.js';
 import { getShield, saveShield, shieldCheck, listMessages, actOnMessage } from './shield.js';
 
 const routes = [
+  ['POST', /^\/api\/tin\/studio-claims$/, (r,e)=>studioClaims(r,e)],
+  ['GET', /^\/api\/admin\/studio-rewards$/, (r,e,u)=>studioAdmin(r,e,u)],
+  ['POST', /^\/api\/admin\/studio-rewards$/, (r,e,u)=>studioAdmin(r,e,u)],
   ['POST', /^\/api\/auth\/register$/, (r, e) => register(r, e)],
   ['POST', /^\/api\/auth\/login$/, (r, e) => login(r, e)],
   ['POST', /^\/api\/auth\/logout$/, (r, e) => logout(r, e)],
@@ -172,3 +176,4 @@ export default {
 };
 
 export { requireRole };
+

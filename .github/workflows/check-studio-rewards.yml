@@ -1,0 +1,25 @@
+name: Check Studio pickup rewards
+on:
+  pull_request:
+    paths:
+      - 'src/studio-rewards.js'
+      - 'src/hunt.js'
+      - 'src/worker.js'
+      - 'public/app.js'
+      - 'migrations/0015_personal_studio_rewards.sql'
+      - 'test/studio-rewards.test.mjs'
+      - '.github/workflows/check-studio-rewards.yml'
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node --experimental-vm-modules --test test/studio-rewards.test.mjs
+      - run: node --check src/worker.js && node --check src/hunt.js && node --check src/studio-rewards.js && node --check public/app.js
+      - run: npm install
+      - run: npx wrangler deploy --dry-run

@@ -7,10 +7,12 @@ import { requireRole } from './auth.js';
 import { stripeEnabled, startCheckout } from './payments.js';
 import { spendCredits, changeCredits, grantWelcome, creditsInfo } from './credits.js';
 import { checkShieldsForDrop } from './shield.js';
+import { recordStudioPickup } from './studio-rewards.js';
 
 // ---------- shared queries ----------
 
 const DROP_COLS = `
+  (SELECT credits FROM studio_drop_rewards sr WHERE sr.drop_id=d.id) AS studio_credits,
   d.id, d.title, d.item, d.category, d.emoji, CASE WHEN d.icon IS NOT NULL THEN '/api/drops/' || d.id || '/icon?v=' || length(d.icon) END AS icon_url, d.story_text, d.gps_lat, d.gps_lng, d.walking_distance,
   d.difficulty, d.reward_value_usd, d.is_mystery, d.kid_friendly, d.quantity, d.remaining, (SELECT COUNT(*) FROM drop_photos p WHERE p.drop_id = d.id) AS photo_count, d.terms, m.logo IS NOT NULL AS has_logo,
   d.status, d.created_at, d.destination_id, d.merchant_id, d.payment_status, d.fee_usd, d.blocked_at,
@@ -21,7 +23,7 @@ const DROP_COLS = `
 export function shapeDrop(r, here, { revealMystery = false } = {}) {
   const m = here ? distanceM(here.lat, here.lng, r.gps_lat, r.gps_lng) : null;
   return {
-    id: r.id, title: r.title, category: r.category, emoji: r.emoji, icon: r.icon_url || null, story: r.story_text,
+    studioCredits:Number(r.studio_credits||0),id: r.id, title: r.title, category: r.category, emoji: r.emoji, icon: r.icon_url || null, story: r.story_text,
     item: r.is_mystery && !revealMystery ? null : r.item, mystery: !!r.is_mystery,
     lat: r.gps_lat, lng: r.gps_lng, walkingNote: r.walking_distance, difficulty: r.difficulty,
     value: r.reward_value_usd, kids: !!r.kid_friendly, remaining: r.remaining, quantity: r.quantity,
@@ -178,6 +180,7 @@ export async function claimDrop(req, env, user, id) {
   const existing = await env.DB.prepare(`SELECT code, status, expires_at FROM claims WHERE user_id = ? AND drop_id = ? AND status IN ('claimed','redeemed')`).bind(user.id, id).first();
   if (existing) {
     if (existing.status === 'redeemed') bad('You already found this treasure', 409);
+    await recordStudioPickup(env,user.id,id);
     return json({ claim: existing, item: drop.item });
   }
   // Reserve one unit atomically; fails cleanly when none are left.
@@ -188,6 +191,7 @@ export async function claimDrop(req, env, user, id) {
     try {
       const claim = await env.DB.prepare(`INSERT INTO claims(user_id, drop_id, code, expires_at, claim_lat, claim_lng, claim_distance_m) VALUES (?,?,?,?,?,?,?) RETURNING code, status, expires_at`)
         .bind(user.id, id, code, addHours(s.claimHours), lat, lng, away).first();
+      await recordStudioPickup(env,user.id,id);
       return json({ claim, item: drop.item }, 201);
     } catch (e) {
       if (!String(e.message).includes('UNIQUE')) { await releaseUnit(env, id); throw e; }
@@ -746,3 +750,4 @@ export async function finishRedemption(env, c, confirmedBy, type, proof) {
   ]);
   return { redemptionId: red.results[0].id, creditsAwarded: credits };
 }
+
